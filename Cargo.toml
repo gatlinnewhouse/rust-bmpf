@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["bmpf-rs", "bpf", "vehicle","ziggurat-rs"]
