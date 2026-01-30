@@ -1,7 +1,7 @@
 //! # Ziggurat: Fast Normal, Exponential, and Polynomial Distributed PRNGs
 //!
 //! This is a Rust port of Bart Massey's Ziggurat implementation, which was derived
-//! from David Bateman's BSD-licensed re-implementation of Marsaglia and Tsang's
+//! from David Bateman's BSD-licensed reimplementation of Marsaglia and Tsang's
 //! Ziggurat Method for Gaussian and exponential pseudo-random number generation.
 //!
 //! ## Original Copyright Notice
@@ -184,7 +184,7 @@ mod tests {
         let mut rng = Ziggurat::new(42);
         for _ in 0..1000 {
             let u = rng.uniform();
-            assert!(u >= 0.0 && u < 1.0);
+            assert!((0.0..1.0).contains(&u));
         }
     }
 
@@ -274,7 +274,7 @@ mod tests {
         let mut rng = Ziggurat::new(42);
         for _ in 0..1000 {
             let x = rng.polynomial(5);
-            assert!(x >= 0.0 && x <= 1.0);
+            assert!((0.0..=1.0).contains(&x));
         }
     }
 }

@@ -20,7 +20,9 @@ const EXP_SECTION_AREA: f64 = 0.003_949_659_822_581_557_199_3;
 const EMANTISSA: f64 = 4_294_967_296.0; // 32 bit mantissa
 
 // Polynomial distribution constants
+#[cfg(feature = "polynomial")]
 pub const PN: f64 = 50.0;
+#[cfg(feature = "polynomial")]
 pub const ZIGGURAT_POL_SECTION_AREA: f64 = 7.927_791_049_125_3e-05;
 
 fn create_normal_tables() -> (
@@ -56,6 +58,7 @@ fn create_normal_tables() -> (
     (k, w, f)
 }
 
+#[cfg(feature = "polynomial")]
 fn polynomail_advance(x0: f64) -> f64 {
     let mut dx = 0.5;
     let mut x = x0;
@@ -72,6 +75,7 @@ fn polynomail_advance(x0: f64) -> f64 {
     }
 }
 
+#[cfg(feature = "polynomial")]
 fn crate_polynomial_tables() -> (
     [f64; ZIGGURAT_TABLE_SIZE],
     [f64; ZIGGURAT_TABLE_SIZE],
@@ -138,7 +142,7 @@ fn write_table(
         file,
         "pub const {}: [{}; {}] = [",
         name,
-        if (name.ends_with("_K") && !name.contains("POLY")) {
+        if name.ends_with("_K") && !name.contains("POLY") {
             "u32"
         } else {
             "f64"
@@ -146,7 +150,7 @@ fn write_table(
         data.len()
     )?;
 
-    for (i, val) in data.iter().enumerate() {
+    for val in data.iter() {
         writeln!(file, "    {:.18},", val)?;
     }
 
@@ -169,25 +173,30 @@ fn write_file(path: &str) -> std::io::Result<File> {
 fn main() -> std::io::Result<()> {
     println!("Generating Ziggurat tables...");
 
-    let (normal_k, normal_w, normal_f) = create_normal_tables();
-    let (exp_k, exp_w, exp_f) = create_exponential_tables();
-    let (poly_k, poly_w, poly_f) = crate_polynomial_tables();
+    {
+        let (normal_k, normal_w, normal_f) = create_normal_tables();
+        let mut norm_file = write_file("src/tables/normal.rs")?;
+        write_table(&mut norm_file, "NORMAL_K", &normal_k)?;
+        write_table(&mut norm_file, "NORMAL_W", &normal_w)?;
+        write_table(&mut norm_file, "NORMAL_F", &normal_f)?;
+    }
 
-    let mut norm_file = write_file("src/tables/normal.rs")?;
-    let mut exp_file = write_file("src/tables/exponential.rs")?;
-    let mut poly_file = write_file("src/tables/polynomial.rs")?;
+    {
+        let (exp_k, exp_w, exp_f) = create_exponential_tables();
+        let mut exp_file = write_file("src/tables/exponential.rs")?;
+        write_table(&mut exp_file, "EXPONENTIAL_K", &exp_k)?;
+        write_table(&mut exp_file, "EXPONENTIAL_W", &exp_w)?;
+        write_table(&mut exp_file, "EXPONENTIAL_F", &exp_f)?;
+    }
 
-    write_table(&mut norm_file, "NORMAL_K", &normal_k)?;
-    write_table(&mut norm_file, "NORMAL_W", &normal_w)?;
-    write_table(&mut norm_file, "NORMAL_F", &normal_f)?;
-
-    write_table(&mut exp_file, "EXPONENTIAL_K", &exp_k)?;
-    write_table(&mut exp_file, "EXPONENTIAL_W", &exp_w)?;
-    write_table(&mut exp_file, "EXPONENTIAL_F", &exp_f)?;
-
-    write_table(&mut poly_file, "POLY_K", &poly_k)?;
-    write_table(&mut poly_file, "POLY_W", &poly_w)?;
-    write_table(&mut poly_file, "POLY_F", &poly_f)?;
+    #[cfg(feature = "polynomial")]
+    {
+        let (poly_k, poly_w, poly_f) = crate_polynomial_tables();
+        let mut poly_file = write_file("src/tables/polynomial.rs")?;
+        write_table(&mut poly_file, "POLY_K", &poly_k)?;
+        write_table(&mut poly_file, "POLY_W", &poly_w)?;
+        write_table(&mut poly_file, "POLY_F", &poly_f)?;
+    }
 
     println!("Tables generated successfully in src/tables.rs");
 
