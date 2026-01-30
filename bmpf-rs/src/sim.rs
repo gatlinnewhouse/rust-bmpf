@@ -6,8 +6,8 @@ static MAX_SPEED: f64 = 2.0;
 pub static AVAR: f64 = PI / 32f64;
 pub static RVAR: f64 = 0.1f64;
 pub static mut GPS_VAR: f64 = 1.0f64;
-static IMU_R_VAR: f64 = 0.5f64;
-static IMU_A_VAR: f64 = PI / 8.0f64;
+pub static IMU_R_VAR: f64 = 0.5f64;
+pub static IMU_A_VAR: f64 = PI / 8.0f64;
 pub static NDIRNS: i32 = 1024;
 
 pub static FAST_DIRECTION: i32 = 0;

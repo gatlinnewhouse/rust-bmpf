@@ -3,9 +3,10 @@ use crate::boxmuller;
 #[cfg(feature = "erfinv")]
 use crate::erfinv;
 use crate::{
+    boxmuller::gaussian,
     sim::{
-        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, NDIRNS, RVAR, angle_dirn, clip_box, clip_speed,
-        normalize_angle, normalize_dirn,
+        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, NDIRNS, RVAR, angle_dirn, clip_box,
+        clip_speed, normalize_angle, normalize_dirn,
     },
     uniform,
 };
@@ -17,10 +18,41 @@ pub struct CCoord {
     pub y: f64,
 }
 
-#[derive(Default)]
+impl CCoord {
+    fn gps_measure(&self) -> CCoord {
+        let mut result = self.clone();
+        #[cfg(feature = "boxmuller")]
+        {
+            result.x += unsafe { gaussian(GPS_VAR) };
+            result.y += unsafe { gaussian(GPS_VAR) };
+        }
+        result
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct ACoord {
-    r: f64,
-    t: f64,
+    pub r: f64,
+    pub t: f64,
+}
+
+impl ACoord {
+    fn measure(&self, dt: f64) -> ACoord {
+        let mut result = self.clone();
+        #[cfg(feature = "boxmuller")]
+        {
+            use crate::sim::IMU_A_VAR;
+            use crate::sim::IMU_R_VAR;
+
+            result.r += unsafe { gaussian(IMU_R_VAR * dt) };
+            result.t += normalize_angle(result.t + unsafe { gaussian(IMU_A_VAR * dt) });
+        }
+        if result.r < 0.0 {
+            result.r = -result.r;
+            result.t = normalize_angle(result.t + PI);
+        }
+        result
+    }
 }
 
 #[derive(PartialEq)]
@@ -39,6 +71,16 @@ pub struct State {
 }
 
 impl State {
+    #[inline]
+    pub fn gps_measure(&self) -> CCoord {
+        self.posn.gps_measure()
+    }
+
+    #[inline]
+    pub fn imu_measure(&self, dt: f64) -> ACoord {
+        self.vel.measure(dt)
+    }
+
     fn bounce(&mut self, r: f64, t: f64, dt: f64, noise: i32) -> BounceProblem {
         let dc0;
         let dms0;
