@@ -2,5 +2,5 @@
 	path = ziggurat-rs/ziggurat-c
 	url = https://github.com/BartMassey/ziggurat.git
 [submodule "bmpf-c"]
-	path = bmpf-c
+	path = bmpf-rs/bmpf-c
 	url = https://github.com/BartMassey/bmpf.git
