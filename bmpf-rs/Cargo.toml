@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 rand = "0.9"
-rand_distr = "0.5"
+ziggurat-rs = { path = "../ziggurat-rs" }
+
+[dev-dependencies]
+clap = { version = "4.5", features = ["derive"] }
