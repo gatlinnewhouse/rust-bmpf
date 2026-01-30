@@ -136,7 +136,7 @@ fn create_exponential_tables() -> (
 fn write_table(
     file: &mut File,
     name: &str,
-    data: &[impl std::fmt::Display],
+    data: &[impl std::fmt::Display + std::fmt::LowerExp],
 ) -> std::io::Result<()> {
     writeln!(
         file,
@@ -151,7 +151,11 @@ fn write_table(
     )?;
 
     for val in data.iter() {
-        writeln!(file, "    {:.18},", val)?;
+        if name.ends_with("_W") {
+            writeln!(file, "    {:e},", val)?;
+        } else {
+            writeln!(file, "    {:.18},", val)?;
+        }
     }
 
     writeln!(file, "];\n")?;

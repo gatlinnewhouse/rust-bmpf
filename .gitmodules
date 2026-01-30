@@ -1,0 +1,3 @@
+[submodule "ziggurat-rs/ziggurat-c"]
+	path = ziggurat-rs/ziggurat-c
+	url = https://github.com/BartMassey/ziggurat.git

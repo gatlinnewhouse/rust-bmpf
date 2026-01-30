@@ -436,4 +436,5 @@ ltrs.*
 vehicle.dat
 auto/
 /benchtmp/*.dat
-
+normaltest-rs.dat
+polytest-rs.dat
