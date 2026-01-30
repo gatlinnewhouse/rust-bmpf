@@ -27,6 +27,11 @@ mod tables;
 use constants::*;
 use isaac::IsaacRng;
 
+use crate::tables::{
+    exponential::{EXPONENTIAL_F, EXPONENTIAL_K, EXPONENTIAL_W},
+    normal::{NORMAL_F, NORMAL_K, NORMAL_W},
+};
+
 /// Main Ziggurat random number generator
 pub struct Ziggurat {
     rng: IsaacRng,
@@ -67,8 +72,8 @@ impl Ziggurat {
         self.last = r;
 
         // 99.3% of the time we return here on first try
-        if rabs < tables::NORMAL_K[idx] {
-            return (r as i32) as f64 * tables::NORMAL_W[idx];
+        if rabs < NORMAL_K[idx] {
+            return (r as i32) as f64 * NORMAL_W[idx];
         }
 
         self.rand_normal(r, idx)
@@ -88,8 +93,8 @@ impl Ziggurat {
         self.last = r;
 
         // 98.9% of the time we return here on first try
-        if r < tables::EXPONENTIAL_K[idx] {
-            return r as f64 * tables::EXPONENTIAL_W[idx];
+        if r < EXPONENTIAL_K[idx] {
+            return r as f64 * EXPONENTIAL_W[idx];
         }
 
         self.rand_exponential(r, idx)
@@ -105,9 +110,9 @@ impl Ziggurat {
     fn rand_normal(&mut self, mut r: u32, mut idx: usize) -> f64 {
         loop {
             let rabs = r & 0x7fffffff;
-            let x = (r as i32) as f64 * tables::NORMAL_W[idx];
+            let x = (r as i32) as f64 * NORMAL_W[idx];
 
-            if rabs < tables::NORMAL_K[idx] {
+            if rabs < NORMAL_K[idx] {
                 return x;
             }
 
@@ -128,8 +133,7 @@ impl Ziggurat {
                 } else {
                     ZIGGURAT_NOR_R + xx
                 };
-            } else if (tables::NORMAL_F[idx - 1] - tables::NORMAL_F[idx]) * self.uniform()
-                + tables::NORMAL_F[idx]
+            } else if (NORMAL_F[idx - 1] - NORMAL_F[idx]) * self.uniform() + NORMAL_F[idx]
                 < (-0.5 * x * x).exp()
             {
                 return x;
@@ -144,15 +148,15 @@ impl Ziggurat {
     /// Slow path for exponential distribution (tail and rejection sampling)
     fn rand_exponential(&mut self, mut r: u32, mut idx: usize) -> f64 {
         loop {
-            let x = r as f64 * tables::EXPONENTIAL_W[idx];
+            let x = r as f64 * EXPONENTIAL_W[idx];
 
-            if r < tables::EXPONENTIAL_K[idx] {
+            if r < EXPONENTIAL_K[idx] {
                 return x;
             } else if idx == 0 {
                 // Handle the tail
                 return ZIGGURAT_EXP_R - self.uniform().ln();
-            } else if (tables::EXPONENTIAL_F[idx - 1] - tables::EXPONENTIAL_F[idx]) * self.uniform()
-                + tables::EXPONENTIAL_F[idx]
+            } else if (EXPONENTIAL_F[idx - 1] - EXPONENTIAL_F[idx]) * self.uniform()
+                + EXPONENTIAL_F[idx]
                 < (-x).exp()
             {
                 return x;
