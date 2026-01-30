@@ -1,5 +1,16 @@
 # Ziggurat-rs: Fast Normal-, Exponential-, and Polynomial-Distributed Pseudo-Random Numbers (in Rust!)
 
+While investigating Bayesian Particle Filtering, Bart Massey alerted me to some
+code he wrote which improved upon the algorithm. In order to understand the
+underlying concepts, I began by trying to port it to Rust. His code relied upon
+his [Ziggurat](https://github.com/BartMassey/ziggurat/) code, so I had to start
+by porting that to Rust.
+
+I am sure some improvements are possible. I mainly used
+[C2Rust](https://c2rust.com/) and some LLMs to provide input on how to convert
+the code (although many LLMs make mistakes with Rust with respect to lifetimes,
+`build.rs` scripts, and missing functionality).
+
 ## Performance comparison
 
 In general the Rust version is slightly slower. This may be due to some errors
