@@ -2,7 +2,7 @@ use bmpf_rs::uniform;
 use clap::Parser;
 use ziggurat_rs::Ziggurat;
 
-static NBINS: usize = 500;
+static NBINS: f64 = 500f64;
 static N: i32 = 50;
 
 #[derive(Parser, Debug)]
@@ -25,9 +25,9 @@ fn minrand(n: usize) -> f64 {
 }
 
 fn main() {
-    let mut real = [0i32; NBINS];
-    let mut sim = [0i32; NBINS];
-    let mut simp = [0i32; NBINS];
+    let mut real = [0i32; NBINS as usize];
+    let mut sim = [0i32; NBINS as usize];
+    let mut simp = [0i32; NBINS as usize];
 
     let mut z = Ziggurat::default();
 
@@ -35,15 +35,15 @@ fn main() {
     let n = args.iterations;
     for _i in 0..n {
         let mut x0 = minrand(N as usize);
-        real[(NBINS as f64 * x0).floor() as usize] += 1;
-        x0 = 1.0 - (uniform().powf(1.0 / (N as f64 + 1.0f64)));
-        sim[(NBINS as f64 * x0).floor() as usize] += 1;
+        real[(NBINS * x0).floor() as usize] += 1;
+        x0 = 1.0f64 - (uniform().powf(1.0 / (N as f64 + 1.0f64)));
+        sim[(NBINS * x0).floor() as usize] += 1;
         x0 = z.polynomial(N);
-        simp[(NBINS as f64 * x0).floor() as usize] += 1;
+        simp[(NBINS * x0).floor() as usize] += 1;
     }
     // println!("{} {}", rand_calls, rand_steps);
-    for i in 0..NBINS {
-        println!("{} {} {} {}", i / NBINS, real[i], sim[i], simp[i]);
+    for i in 0..(NBINS as usize) {
+        println!("{} {} {} {}", (i as f64 / NBINS), real[i], sim[i], simp[i]);
         if real[i] == 0 && sim[i] == 0 && simp[i] == 0 {
             break;
         }
