@@ -11,11 +11,13 @@ use crate::{
 };
 use std::f64::consts::PI;
 
+#[derive(Default, Clone)]
 pub struct CCoord {
-    x: f64,
-    y: f64,
+    pub x: f64,
+    pub y: f64,
 }
 
+#[derive(Default)]
 pub struct ACoord {
     r: f64,
     t: f64,
@@ -29,8 +31,9 @@ enum BounceProblem {
     BounceXY,
 }
 
+#[derive(Default)]
 pub struct State {
-    posn: CCoord,
+    pub posn: CCoord,
     vel: ACoord,
     cos_dirn: CosDirn,
 }
@@ -82,7 +85,7 @@ impl State {
         BounceProblem::BounceXY
     }
 
-    fn init_state(&mut self) {
+    pub fn init_state(&mut self) {
         self.posn.x = (uniform() * 2.0 - 1.0) * BOX_DIM;
         self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
         self.vel.r = uniform();
@@ -90,7 +93,7 @@ impl State {
         self.cos_dirn.init_dirn();
     }
 
-    fn update_state(&mut self, dt: f64, noise: i32) {
+    pub fn update_state(&mut self, dt: f64, noise: i32) {
         #[cfg(feature = "erfinv")]
         let mut r0 = clip_speed(
             self.vel.r + erfinv::gaussian(RVAR as f32) as f64 * ((1 + 8 * noise) as f64),

@@ -1,9 +1,9 @@
 use rand::distr::{Distribution, Uniform};
 
 #[cfg(feature = "boxmuller")]
-mod boxmuller;
+pub mod boxmuller;
 #[cfg(feature = "erfinv")]
-mod erfinv;
+pub mod erfinv;
 pub mod sim;
 pub mod types;
 
