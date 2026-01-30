@@ -1,13 +1,15 @@
-use std::f64::consts::PI;
-
+#[cfg(feature = "boxmuller")]
+use crate::boxmuller;
+#[cfg(feature = "erfinv")]
+use crate::erfinv;
 use crate::{
-    erfinv::gaussian,
     sim::{
         AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, NDIRNS, RVAR, angle_dirn, clip_box, clip_speed,
         normalize_angle, normalize_dirn,
     },
     uniform,
 };
+use std::f64::consts::PI;
 
 pub struct CCoord {
     x: f64,
@@ -89,8 +91,22 @@ impl State {
     }
 
     fn update_state(&mut self, dt: f64, noise: i32) {
-        let mut r0 = clip_speed(self.vel.r + gaussian(RVAR) * ((1 + 8 * noise) as f64));
-        let mut t0 = normalize_angle(self.vel.t + gaussian(AVAR) * ((1 + 8 * noise) as f64));
+        #[cfg(feature = "erfinv")]
+        let mut r0 = clip_speed(
+            self.vel.r + erfinv::gaussian(RVAR as f32) as f64 * ((1 + 8 * noise) as f64),
+        );
+        #[cfg(feature = "erfinv")]
+        let mut t0 = normalize_angle(
+            self.vel.t + erfinv::gaussian(AVAR as f32) as f64 * ((1 + 8 * noise) as f64),
+        );
+        #[cfg(feature = "boxmuller")]
+        let mut r0 = clip_speed(
+            self.vel.r + unsafe { boxmuller::gaussian(RVAR) } * ((1 + 8 * noise) as f64),
+        );
+        #[cfg(feature = "boxmuller")]
+        let mut t0 = normalize_angle(
+            self.vel.t + unsafe { boxmuller::gaussian(AVAR) } * ((1 + 8 * noise) as f64),
+        );
         let mut b = self.bounce(r0, t0, dt, 0);
         if b != BounceProblem::BounceOk {
             r0 = self.vel.r;

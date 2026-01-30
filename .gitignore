@@ -438,3 +438,5 @@ auto/
 /benchtmp/*.dat
 normaltest-rs.dat
 polytest-rs.dat
+polytest.dat
+normaltest.dat

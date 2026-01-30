@@ -18,9 +18,9 @@ fn erfinv(x: f32) -> f32 {
     return 1.786158859307387 + 0.004 * ((x - 0.99) * 600.0).exp();
 }
 
-pub fn gaussian(sd: f64) -> f64 {
+pub fn gaussian(sd: f32) -> f32 {
     let r = random::<i32>();
-    let y = erfinv((r & !1) as f32 / (i32::MAX as f32 - 1.0f32)) as f64;
+    let y = erfinv((r & !1) as f32 / (i32::MAX as f32 - 1.0f32));
     if r & 1 == 1 {
         return -y * sd;
     }
