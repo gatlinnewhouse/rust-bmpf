@@ -1,5 +1,10 @@
 use rand::distr::{Distribution, Uniform};
 
+mod boxmuller;
+mod erfinv;
+pub mod sim;
+pub mod types;
+
 pub fn uniform() -> f64 {
     let mut rng = rand::rng();
     let uniform =
