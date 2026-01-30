@@ -65,13 +65,13 @@ echo "Done!"
 rm c-exps_f.tmp
 rm rs-exps_f.tmp
 
-../target/release/examples/polytest >polytest-rs.dat
+time ../target/release/examples/polytest >polytest-rs.dat
 echo "Diffing Polytest data"
 diff --side-by-side ziggurat-c/polytest.dat polytest-rs.dat
 echo "Done!"
 gnuplot -p -e "plot 'polytest-rs.dat' using 1:2 with boxes, '' using 1:3 with lines" &
 
-../target/release/examples/normaltest >normaltest-rs.dat
+time ../target/release/examples/normaltest >normaltest-rs.dat
 echo "Diffing Normaltest data"
 diff --side-by-side ziggurat-c/normaltest.dat normaltest-rs.dat
 echo "Done!"
