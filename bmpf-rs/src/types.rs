@@ -257,7 +257,7 @@ impl Default for BpfState {
         Self {
             pstates: [Particles::default(); 2],
             which_particle: false,
-            resampler: Resampler::new("naive"),
+            resampler: Resampler::new("regular"),
             sort: false,
             nparticles: 100,
             report_particles: 1000,
