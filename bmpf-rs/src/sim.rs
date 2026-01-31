@@ -13,6 +13,7 @@ pub static NDIRNS: i32 = 1024;
 pub static FAST_DIRECTION: i32 = 0;
 static COS_DIRN: [f32; NDIRNS as usize] = [0f32; NDIRNS as usize];
 
+#[derive(Clone, Copy)]
 pub struct CosDirn {
     pub data: [f64; NDIRNS as usize],
 }

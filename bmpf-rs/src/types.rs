@@ -4,18 +4,23 @@ use crate::boxmuller;
 use crate::erfinv;
 use crate::{
     boxmuller::gaussian,
+    resample::{Resample, Resampler},
     sim::{
-        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, NDIRNS, RVAR, angle_dirn, clip_box,
-        clip_speed, normalize_angle, normalize_dirn,
+        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, NDIRNS, RVAR,
+        angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn,
     },
     uniform,
 };
-use std::f64::consts::PI;
+use std::{cmp::Ordering, f64::consts::PI, fs::OpenOptions, io::Write};
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
 pub struct CCoord {
     pub x: f64,
     pub y: f64,
+}
+
+fn gprob(delta: f64, sd: f64) -> f64 {
+    (-0.5 * delta * delta / (sd * sd)).exp()
 }
 
 impl CCoord {
@@ -28,9 +33,18 @@ impl CCoord {
         }
         result
     }
+
+    fn gps_prob(&self, state: &VehicleState) -> f64 {
+        if state.posn.x != clip_box(state.posn.x) || state.posn.y != clip_box(state.posn.y) {
+            return 0.0;
+        }
+        let px = gprob(state.posn.x - self.x, unsafe { GPS_VAR });
+        let py = gprob(state.posn.y - self.y, unsafe { GPS_VAR });
+        px * py
+    }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
 pub struct ACoord {
     pub r: f64,
     pub t: f64,
@@ -53,6 +67,18 @@ impl ACoord {
         }
         result
     }
+
+    fn imu_prob(&self, state: &VehicleState, dt: f64) -> f64 {
+        if state.vel.r != clip_speed(state.vel.r) {
+            return 0.0;
+        }
+        let pr = gprob(state.vel.r - self.r, IMU_R_VAR / dt);
+        let dth = (state.vel.t - self.t)
+            .abs()
+            .min(((state.vel.t - self.t).abs() - 2.0 * PI).abs());
+        let pt = gprob(dth, IMU_A_VAR / dt);
+        pr * pt
+    }
 }
 
 #[derive(PartialEq)]
@@ -63,14 +89,14 @@ enum BounceProblem {
     BounceXY,
 }
 
-#[derive(Default)]
-pub struct State {
+#[derive(Clone, Default, Copy)]
+pub struct VehicleState {
     pub posn: CCoord,
     vel: ACoord,
     cos_dirn: CosDirn,
 }
 
-impl State {
+impl VehicleState {
     #[inline]
     pub fn gps_measure(&self) -> CCoord {
         self.posn.gps_measure()
@@ -177,7 +203,250 @@ impl State {
     }
 }
 
+#[derive(Default, Clone, Copy)]
 pub struct ParticleInfo {
-    state: State,
-    weight: f64,
+    pub state: VehicleState,
+    pub weight: f64,
+}
+
+#[inline]
+fn sgn(x: f64) -> Ordering {
+    if x < 0.0 {
+        return Ordering::Less;
+    } else if x > 0.0 {
+        return Ordering::Greater;
+    }
+    Ordering::Equal
+}
+
+impl ParticleInfo {
+    pub fn cmp_weight(&self, other: &Self) -> std::cmp::Ordering {
+        sgn(self.weight - other.weight).reverse()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Particles {
+    pub data: [ParticleInfo; 100],
+}
+
+impl Default for Particles {
+    fn default() -> Self {
+        Self {
+            data: [ParticleInfo::default(); 100],
+        }
+    }
+}
+
+pub struct BpfState {
+    pstates: [Particles; 2],
+    which_particle: bool,
+    resampler: Resampler,
+    sort: bool,
+    nparticles: usize,
+    pub report_particles: i32,
+    best_particle: bool,
+    resample_interval: usize,
+    pub vehicle: CCoord,
+    gps: CCoord,
+    imu: ACoord,
+}
+
+impl Default for BpfState {
+    fn default() -> Self {
+        Self {
+            pstates: [Particles::default(); 2],
+            which_particle: false,
+            resampler: Resampler::new("naive"),
+            sort: false,
+            nparticles: 100,
+            report_particles: 1000,
+            best_particle: false,
+            resample_interval: 1,
+            vehicle: CCoord::default(),
+            gps: CCoord::default(),
+            imu: ACoord::default(),
+        }
+    }
+}
+
+impl BpfState {
+    pub fn init_particles(&mut self) {
+        let invscale = 1.0 / self.nparticles as f64;
+        self.which_particle = false;
+        for particle in &mut self.pstates[0].data {
+            particle.state.init_state();
+            particle.weight = invscale;
+        }
+    }
+
+    pub fn parse_line(&mut self, line: String) -> i32 {
+        let measures = line.split(" ").collect::<Vec<&str>>();
+        self.vehicle.x = measures[1]
+            .parse::<f64>()
+            .expect("Failed to parse vehicle x to f64");
+        self.vehicle.y = measures[2]
+            .parse::<f64>()
+            .expect("Failed to parse vehicle y to f64");
+        self.gps.x = measures[3]
+            .parse::<f64>()
+            .expect("Failed to parse gps x to f64");
+        self.gps.y = measures[4]
+            .parse::<f64>()
+            .expect("Failed to parse gps y to f64");
+        self.imu.r = measures[5]
+            .parse::<f64>()
+            .expect("Failed to parse imu r to f64");
+        self.imu.t = measures[6]
+            .parse::<f64>()
+            .expect("Failed to parse imu t to f64");
+
+        measures[0]
+            .parse::<i32>()
+            .expect("Failed to parse t_ms return value to i32")
+    }
+
+    pub fn bpf_step(&mut self, t: f64, dt: f64, report: bool) {
+        let mut tweight = 0.0;
+        let mut best = 0usize;
+        #[cfg(feature = "diagnostic-print")]
+        let mut worst = 0usize;
+        let mut best_weight = 0.0;
+        let mut worst_weight = 0.0;
+        let mut resample_count = 0;
+        let mut est_state = VehicleState::default();
+        est_state.init_state();
+        #[cfg(feature = "debug")]
+        {
+            for i in 0..self.nparticles {
+                tweight += self.pstates[self.which_particle].data[i].weight;
+                assert!(tweight > 0.00001);
+            }
+            tweight = 0.0;
+        }
+        for i in 0..self.nparticles {
+            self.pstates[self.which_particle as usize].data[i]
+                .state
+                .update_state(dt, 1);
+            let gp = self.gps.gps_prob(&est_state);
+            let ip = self.imu.imu_prob(&est_state, dt);
+            let w = gp * ip * self.pstates[self.which_particle as usize].data[i].weight;
+            self.pstates[self.which_particle as usize].data[i].weight = w;
+            tweight += w;
+        }
+        #[cfg(feature = "debug")]
+        assert!(tweight > 0.00001);
+        let invtweight = 1.0 / tweight;
+        for i in 0..self.nparticles {
+            self.pstates[self.which_particle as usize].data[i].weight *= invtweight;
+        }
+        est_state.posn.x = 0.0;
+        est_state.posn.y = 0.0;
+        est_state.vel.r = 0.0;
+        est_state.vel.t = 0.0;
+        if !self.best_particle {
+            for i in 0..self.nparticles {
+                let s = &self.pstates[self.which_particle as usize].data[i].state;
+                let w = self.pstates[self.which_particle as usize].data[i].weight;
+                est_state.posn.x += w * s.posn.x;
+                est_state.posn.y += w * s.posn.y;
+                est_state.vel.r += w * s.vel.r;
+                est_state.vel.t = normalize_angle(est_state.vel.t + w * s.vel.t);
+            }
+        }
+        if report {
+            eprintln!("Writing to a file...");
+            let filename = format!("benchtmp/particles-{}.dat", t);
+            let mut file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(filename)
+                .expect("Could not open file");
+            for i in 0..self.nparticles {
+                let px = self.pstates[self.which_particle as usize].data[i]
+                    .state
+                    .posn
+                    .x;
+                let py = self.pstates[self.which_particle as usize].data[i]
+                    .state
+                    .posn
+                    .y;
+                let w = self.pstates[self.which_particle as usize].data[i].weight;
+                if let Err(e) = writeln!(file, "{} {} {}", px, py, w) {
+                    eprintln!("Could not write to file: {}", e)
+                }
+            }
+        }
+        resample_count = (resample_count + 1) % self.resample_interval;
+        if resample_count == 0 {
+            let mut new_particle = self.pstates[!self.which_particle as usize];
+            best = self.resampler.resample(
+                tweight,
+                self.nparticles,
+                &mut self.pstates[self.which_particle as usize],
+                self.nparticles,
+                &mut new_particle,
+                self.sort,
+            );
+            self.pstates[!self.which_particle as usize] = new_particle;
+            self.which_particle = !self.which_particle;
+            for i in 0..self.nparticles {
+                self.pstates[self.which_particle as usize].data[i].weight =
+                    1.0 / self.nparticles as f64;
+            }
+        }
+        {
+            best_weight = self.pstates[self.which_particle as usize].data[0].weight;
+            worst_weight = self.pstates[self.which_particle as usize].data[0].weight;
+            best = 0;
+            #[cfg(feature = "diagnostic-print")]
+            {
+                worst = 0;
+            }
+            for i in 1..self.nparticles {
+                if self.pstates[self.which_particle as usize].data[i].weight > best_weight {
+                    best = i;
+                    best_weight = self.pstates[self.which_particle as usize].data[i].weight;
+                } else if self.pstates[self.which_particle as usize].data[i].weight < worst_weight {
+                    #[cfg(feature = "diagnostic-print")]
+                    {
+                        worst = i;
+                    }
+                    worst_weight = self.pstates[self.which_particle as usize].data[i].weight;
+                }
+            }
+        }
+        #[cfg(feature = "diagnostic-print")]
+        {
+            print!(
+                "  {} {} {}",
+                best_weight,
+                self.pstates[self.which_particle].data[best].state.posn.x,
+                self.pstates[self.which_particle].data[best].state.posn.y,
+            );
+            print!(
+                "  {} {} {}",
+                worst_weight,
+                self.pstates[self.which_particle].data[worst].state.posn.x,
+                self.pstates[self.which_particle].data[worst].state.posn.y,
+            );
+        }
+        #[cfg(not(feature = "diagnostic-print"))]
+        {
+            print!(
+                "  {} {}",
+                self.pstates[self.which_particle as usize].data[best]
+                    .state
+                    .posn
+                    .x,
+                self.pstates[self.which_particle as usize].data[best]
+                    .state
+                    .posn
+                    .y
+            );
+        }
+        if !self.best_particle {
+            print!("  {} {}", est_state.posn.x, est_state.posn.y);
+        }
+    }
 }

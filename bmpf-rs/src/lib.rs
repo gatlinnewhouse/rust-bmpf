@@ -4,6 +4,7 @@ use rand::distr::{Distribution, Uniform};
 pub mod boxmuller;
 #[cfg(feature = "erfinv")]
 pub mod erfinv;
+pub mod resample;
 pub mod sim;
 pub mod types;
 

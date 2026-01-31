@@ -1,10 +1,10 @@
-use bmpf_rs::types::State;
+use bmpf_rs::types::VehicleState;
 
 fn run() {
     let mut t = 0.0f64;
-    let mut dt = 0.01f64;
+    let dt = 0.01f64;
 
-    let mut vehicle = State::default();
+    let mut vehicle = VehicleState::default();
     vehicle.init_state();
 
     while t <= 10.0f64 {
