@@ -3,3 +3,4 @@
 TODO:
 - [ ] CLI parsing
 - [ ] Audit code to better match C code behavior
+- [ ] Justfile to benchmark and compare with C code
