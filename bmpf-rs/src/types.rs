@@ -5,8 +5,8 @@ use crate::erfinv;
 use crate::{
     resample::{Resample, Resampler},
     sim::{
-        angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn, CosDirn, AVAR, BOX_DIM,
-        FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS, RVAR,
+        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS,
+        RVAR, angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn,
     },
     uniform,
 };
