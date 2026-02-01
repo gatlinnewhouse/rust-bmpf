@@ -20,15 +20,9 @@ fn main() {
     let mut t_ms = 0;
     let mut t_last = 0;
     let mut t = 0.0;
-    let mut first_line = true;
     if let Ok(lines) = read_lines("./vehicle.dat") {
         for line in lines.map_while(Result::ok) {
-            if first_line {
-                t_ms = state.parse_line(line);
-                t = t_ms as f64 * (1.0 / 1000.0);
-                first_line = false;
-                continue;
-            }
+            t_ms = state.parse_line(line);
             let t0 = t_ms as f64 * (1.0 / 1000.0);
             let dt = t0 - t;
             let mut report = false;

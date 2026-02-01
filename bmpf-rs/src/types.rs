@@ -178,11 +178,11 @@ impl VehicleState {
         let mut t0 = normalize_angle(
             self.vel.t + unsafe { boxmuller::gaussian(AVAR) } * ((1 + 8 * noise) as f64),
         );
-        let mut b = self.bounce(r0, t0, dt, 0);
+        let mut b = self.bounce(r0, t0, dt, noise);
         if b != BounceProblem::BounceOk {
             r0 = self.vel.r;
             t0 = self.vel.t;
-            b = self.bounce(r0, t0, dt, noise);
+            b = self.bounce(r0, t0, dt, 0);
             match b {
                 BounceProblem::BounceOk => (),
                 BounceProblem::BounceX => {
@@ -195,7 +195,7 @@ impl VehicleState {
                 }
                 BounceProblem::BounceXY => {
                     t0 = normalize_angle(PI + t0);
-                    b = self.bounce(r0, t0, dt, noise)
+                    b = self.bounce(r0, t0, dt, 0)
                 }
             }
         }
@@ -247,6 +247,7 @@ pub struct BpfState {
     pub report_particles: i32,
     best_particle: bool,
     resample_interval: usize,
+    resample_count: usize,
     pub vehicle: CCoord,
     gps: CCoord,
     imu: ACoord,
@@ -257,12 +258,13 @@ impl Default for BpfState {
         Self {
             pstates: [Particles::default(); 2],
             which_particle: false,
-            resampler: Resampler::new("regular"),
+            resampler: Resampler::new("naive"),
             sort: false,
             nparticles: 100,
             report_particles: 1000,
             best_particle: false,
             resample_interval: 1,
+            resample_count: 0,
             vehicle: CCoord::default(),
             gps: CCoord::default(),
             imu: ACoord::default(),
@@ -313,13 +315,12 @@ impl BpfState {
         let mut worst = 0usize;
         let mut best_weight = 0.0;
         let mut worst_weight = 0.0;
-        let mut resample_count = 0;
         let mut est_state = VehicleState::default();
-        est_state.init_state();
+        // est_state.init_state();
         #[cfg(feature = "debug")]
         {
             for i in 0..self.nparticles {
-                tweight += self.pstates[self.which_particle].data[i].weight;
+                tweight += self.pstates[self.which_particle as usize].data[i].weight;
                 assert!(tweight > 0.00001);
             }
             tweight = 0.0;
@@ -328,8 +329,13 @@ impl BpfState {
             self.pstates[self.which_particle as usize].data[i]
                 .state
                 .update_state(dt, 1);
-            let gp = self.gps.gps_prob(&est_state);
-            let ip = self.imu.imu_prob(&est_state, dt);
+            let gp = self
+                .gps
+                .gps_prob(&self.pstates[self.which_particle as usize].data[i].state);
+            let ip = self.imu.imu_prob(
+                &self.pstates[self.which_particle as usize].data[i].state,
+                dt,
+            );
             let w = gp * ip * self.pstates[self.which_particle as usize].data[i].weight;
             self.pstates[self.which_particle as usize].data[i].weight = w;
             tweight += w;
@@ -355,7 +361,6 @@ impl BpfState {
             }
         }
         if report {
-            eprintln!("Writing to a file...");
             let filename = format!("benchtmp/particles-{}.dat", t);
             let mut file = OpenOptions::new()
                 .append(true)
@@ -377,8 +382,8 @@ impl BpfState {
                 }
             }
         }
-        resample_count = (resample_count + 1) % self.resample_interval;
-        if resample_count == 0 {
+        self.resample_count = (self.resample_count + 1) % self.resample_interval;
+        if self.resample_count == 0 {
             let mut new_particle = self.pstates[!self.which_particle as usize];
             best = self.resampler.resample(
                 tweight,
@@ -421,14 +426,26 @@ impl BpfState {
             print!(
                 "  {} {} {}",
                 best_weight,
-                self.pstates[self.which_particle].data[best].state.posn.x,
-                self.pstates[self.which_particle].data[best].state.posn.y,
+                self.pstates[self.which_particle as usize].data[best]
+                    .state
+                    .posn
+                    .x,
+                self.pstates[self.which_particle as usize].data[best]
+                    .state
+                    .posn
+                    .y,
             );
             print!(
                 "  {} {} {}",
                 worst_weight,
-                self.pstates[self.which_particle].data[worst].state.posn.x,
-                self.pstates[self.which_particle].data[worst].state.posn.y,
+                self.pstates[self.which_particle as usize].data[worst]
+                    .state
+                    .posn
+                    .x,
+                self.pstates[self.which_particle as usize].data[worst]
+                    .state
+                    .posn
+                    .y,
             );
         }
         #[cfg(not(feature = "diagnostic-print"))]
