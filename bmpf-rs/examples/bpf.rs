@@ -20,7 +20,13 @@ fn main() {
     let mut t_ms = 0;
     let mut t_last = 0;
     let mut t = 0.0;
-    if let Ok(lines) = read_lines("./vehicle.dat") {
+    if let Ok(mut lines) = read_lines("./vehicle.dat") {
+        // Read first line to initialize
+        if let Some(Ok(first_line)) = lines.next() {
+            t_ms = state.parse_line(first_line);
+            t = t_ms as f64 * (1.0 / 1000.0);
+        }
+
         for line in lines.map_while(Result::ok) {
             t_ms = state.parse_line(line);
             let t0 = t_ms as f64 * (1.0 / 1000.0);
