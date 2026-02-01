@@ -24,7 +24,7 @@ impl Resample for Optimal {
         sort: bool,
     ) -> usize {
         let invscale = 1.0 / scale;
-        let mut u0 = nform((n - 1) as i32, sort);
+        let mut u0 = nform((n - 1) as i32, sort) * scale;
         let mut j = 0;
         let mut t = 0f64;
         let mut best_w = 0f64;
