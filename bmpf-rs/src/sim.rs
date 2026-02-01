@@ -60,7 +60,7 @@ pub fn normalize_angle(mut t: f64) -> f64 {
 
 #[inline]
 pub fn clip(x: f64, low: f64, high: f64) -> f64 {
-    high.min(x.max(low))
+    x.clamp(low, high)
 }
 
 #[inline]
