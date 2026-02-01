@@ -21,7 +21,7 @@ fn minrand(n: usize) -> f64 {
             x = y;
         }
     }
-    x
+    x as f64
 }
 
 fn main() {
@@ -36,7 +36,7 @@ fn main() {
     for _i in 0..n {
         let mut x0 = minrand(N as usize);
         real[(NBINS * x0).floor() as usize] += 1;
-        x0 = 1.0f64 - (uniform().powf(1.0 / (N as f64 + 1.0f64)));
+        x0 = 1.0f64 - ((uniform() as f64).powf(1.0 / (N as f64 + 1.0f64)));
         sim[(NBINS * x0).floor() as usize] += 1;
         x0 = z.polynomial(N);
         simp[(NBINS * x0).floor() as usize] += 1;

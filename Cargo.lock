@@ -57,6 +57,7 @@ name = "bmpf-rs"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "libc",
  "rand",
  "ziggurat-rs",
 ]

@@ -14,8 +14,8 @@ pub unsafe fn gaussian(sd: f64) -> f64 {
             return Y2 * sd;
         }
         loop {
-            X1 = 2.0 * uniform() - 1.0;
-            X2 = 2.0 * uniform() - 1.0;
+            X1 = 2.0 * uniform() as f64 - 1.0;
+            X2 = 2.0 * uniform() as f64 - 1.0;
             W = X1 * X1 + X2 * X2;
             if W < 1.0 {
                 break;

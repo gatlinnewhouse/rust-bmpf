@@ -1,4 +1,4 @@
-use rand::distr::{Distribution, Uniform};
+use libc::RAND_MAX;
 
 #[cfg(feature = "boxmuller")]
 pub mod boxmuller;
@@ -8,9 +8,6 @@ pub mod resample;
 pub mod sim;
 pub mod types;
 
-pub fn uniform() -> f64 {
-    let mut rng = rand::rng();
-    let uniform =
-        Uniform::new::<f64, f64>(0.0, 1.0).expect("Unable to create uniform distribution for f64");
-    uniform.sample(&mut rng)
+pub fn uniform() -> f32 {
+    unsafe { libc::rand() as f32 / RAND_MAX as f32 }
 }

@@ -10,7 +10,7 @@ fn nform(n: i32, sort: bool) -> f64 {
         let mut z = Ziggurat::default();
         return z.polynomial(n);
     }
-    1.0f64 - uniform().powi(1 / (n + 1))
+    1.0f64 - uniform().powi(1 / (n + 1)) as f64
 }
 
 impl Resample for Optimal {

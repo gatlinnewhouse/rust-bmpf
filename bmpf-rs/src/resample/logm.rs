@@ -29,7 +29,7 @@ impl<'a> Logm {
         m: usize,
         particles: &'a Particles,
     ) -> &'a ParticleInfo {
-        let mut w = uniform() * scale;
+        let mut w = uniform() as f64 * scale;
         #[cfg(feature = "debug-logm")]
         let mut j = 0usize;
         for mut i in 0..m {

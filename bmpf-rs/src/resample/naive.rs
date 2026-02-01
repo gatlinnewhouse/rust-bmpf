@@ -9,7 +9,7 @@ use std::process::abort;
 pub struct Naive {}
 
 fn weighted_sample(scale: f64, m: usize, particles: &Particles) -> &ParticleInfo {
-    let w = uniform() * scale;
+    let w = uniform() as f64 * scale;
     let mut t = 0f64;
     for i in 0..m {
         t += particles.data[i].weight;

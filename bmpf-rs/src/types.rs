@@ -154,10 +154,10 @@ impl VehicleState {
     }
 
     pub fn init_state(&mut self) {
-        self.posn.x = (uniform() * 2.0 - 1.0) * BOX_DIM;
-        self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
-        self.vel.r = uniform();
-        self.vel.t = normalize_angle(uniform() * (PI / 2.0f64));
+        self.posn.x = (uniform() as f64 * 2.0 - 1.0) * BOX_DIM;
+        self.posn.y = (uniform() as f64 * 2.0 - 1.0) * BOX_DIM;
+        self.vel.r = uniform() as f64;
+        self.vel.t = normalize_angle(uniform() as f64 * (PI / 2.0f64));
         self.cos_dirn.init_dirn();
     }
 
