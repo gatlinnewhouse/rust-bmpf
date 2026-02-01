@@ -63,20 +63,13 @@ impl ACoord {
         let mut result = self.clone();
         #[cfg(feature = "boxmuller")]
         {
-            use crate::sim::IMU_A_VAR;
-            use crate::sim::IMU_R_VAR;
-
-            #[cfg(feature = "boxmuller")]
-            {
-                result.r += unsafe { boxmuller::gaussian(IMU_R_VAR * dt) };
-                result.t =
-                    normalize_angle(result.t + unsafe { boxmuller::gaussian(IMU_A_VAR * dt) });
-            }
-            #[cfg(feature = "erfinv")]
-            {
-                result.r += unsafe { erfinv::gaussian(IMU_R_VAR * dt) };
-                result.t = normalize_angle(result.t + unsafe { erfinv::gaussian(IMU_A_VAR * dt) });
-            }
+            result.r += unsafe { boxmuller::gaussian(IMU_R_VAR * dt) };
+            result.t = normalize_angle(result.t + unsafe { boxmuller::gaussian(IMU_A_VAR * dt) });
+        }
+        #[cfg(feature = "erfinv")]
+        {
+            result.r += unsafe { erfinv::gaussian(IMU_R_VAR * dt) };
+            result.t = normalize_angle(result.t + unsafe { erfinv::gaussian(IMU_A_VAR * dt) });
         }
         if result.r < 0.0 {
             result.r = -result.r;
@@ -283,7 +276,7 @@ impl Default for BpfState {
         Self {
             pstates: vec![Particles::default(); 2],
             which_particle: false,
-            resampler: Resampler::new("naive"),
+            resampler: Resampler::new("naive", 100),
             sort: false,
             nparticles: 100,
             report_particles: 1000,
@@ -309,7 +302,7 @@ impl BpfState {
         Self {
             pstates: vec![Particles::new(nparticles); 2],
             which_particle: false,
-            resampler: Resampler::new(resampler),
+            resampler: Resampler::new(resampler, nparticles),
             sort,
             nparticles,
             report_particles,

@@ -29,8 +29,9 @@ pub enum Resampler {
 }
 
 impl Resampler {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, mmax: usize) -> Self {
         match name {
+            "logm" => Self::Logm(logm::Logm::new(mmax)),
             "naive" => Self::Naive(naive::Naive::default()),
             "optimal" => Self::Optimal(optimal::Optimal::default()),
             "regular" => Self::Regular(regular::Regular::default()),

@@ -17,7 +17,7 @@ pub struct Logm {
 impl<'a> Logm {
     pub fn new(mmax: usize) -> Self {
         Self {
-            tweight: Vec::with_capacity(mmax),
+            tweight: vec![0f64; mmax],
             #[cfg(feature = "debug-logm")]
             total_depth: 0,
         }
@@ -114,11 +114,11 @@ impl<'a> Logm {
         }
     }
 
-    fn init_tweights(&mut self, m: usize, particles: &'a Particles) {
+    pub fn init_tweights(&mut self, m: usize, particles: &'a Particles) {
         let mut j = 0usize;
         for i in ((m / 2)..(m - 1)).rev() {
             self.tweight[i] = particles.data[i].weight;
-            j = i;
+            j = i - 1; // --i in for loop happens at end
         }
         self.tweight[j] = particles.data[j].weight;
         let mut left = 2 * j + 1;
