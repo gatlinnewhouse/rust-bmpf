@@ -32,8 +32,8 @@ impl CCoord {
         }
         #[cfg(feature = "erfinv")]
         {
-            result.x += unsafe { erfinv::gaussian(GPS_VAR) };
-            result.y += unsafe { erfinv::gaussian(GPS_VAR) };
+            result.x += unsafe { erfinv::gaussian(GPS_VAR as f32) };
+            result.y += unsafe { erfinv::gaussian(GPS_VAR as f32) };
         }
         result
     }
@@ -68,8 +68,9 @@ impl ACoord {
         }
         #[cfg(feature = "erfinv")]
         {
-            result.r += unsafe { erfinv::gaussian(IMU_R_VAR * dt) };
-            result.t = normalize_angle(result.t + unsafe { erfinv::gaussian(IMU_A_VAR * dt) });
+            result.r += unsafe { erfinv::gaussian((IMU_R_VAR * dt) as f32) };
+            result.t =
+                normalize_angle(result.t + unsafe { erfinv::gaussian((IMU_A_VAR * dt) as f32) });
         }
         if result.r < 0.0 {
             result.r = -result.r;
