@@ -39,7 +39,7 @@ struct Args {
     resample_interval: usize,
 
     /// Fast direction
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 0)]
     fast_direction: i32,
 
     #[arg(long, default_value_t = PI / 32f64)]

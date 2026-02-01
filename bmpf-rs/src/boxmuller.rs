@@ -1,31 +1,30 @@
 use crate::uniform;
 
-static mut X1: f64 = 0.0;
-static mut X2: f64 = 0.0;
-static mut W: f64 = 0.0;
-static mut Y1: f64 = 0.0;
 static mut Y2: f64 = 0.0f64;
-static mut HAVE_Y2: i64 = 0;
+static mut HAVE_Y2: bool = false;
 
 pub unsafe fn gaussian(sd: f64) -> f64 {
     unsafe {
-        if HAVE_Y2 == 1 {
-            HAVE_Y2 = 0;
+        if HAVE_Y2 {
+            HAVE_Y2 = false;
             return Y2 * sd;
         }
+        let mut x1;
+        let mut x2;
+        let mut w;
         loop {
-            X1 = 2.0 * uniform() as f64 - 1.0;
-            X2 = 2.0 * uniform() as f64 - 1.0;
-            W = X1 * X1 + X2 * X2;
-            if W < 1.0 {
+            x1 = 2.0 * uniform() - 1.0;
+            x2 = 2.0 * uniform() - 1.0;
+            w = x1 * x1 + x2 * x2;
+            if w < 1.0 {
                 break;
             }
         }
-        W = ((-2.0 * W.ln()) / W).sqrt();
-        Y1 = X1 * W;
-        Y2 = X2 * W;
-        HAVE_Y2 = 1;
-        Y1 * sd
+        w = ((-2.0 * w.ln()) / w).sqrt();
+        let y1 = x1 * w;
+        Y2 = x2 * w;
+        HAVE_Y2 = true;
+        y1 * sd
     }
 }
 

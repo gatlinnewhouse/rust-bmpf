@@ -10,7 +10,7 @@ fn nform(n: i32, sort: bool) -> f64 {
         let mut z = Ziggurat::default();
         return z.polynomial(n);
     }
-    1.0f64 - uniform().powi(1 / (n + 1)) as f64
+    1.0f64 - uniform().powf(1.0 / (n + 1) as f64)
 }
 
 impl Resample for Optimal {
@@ -31,8 +31,8 @@ impl Resample for Optimal {
         let mut best_i = 0usize;
         for i in 0..n {
             while t + particle.data[j].weight < u0 && j < m {
-                j += 1;
                 t += particle.data[j].weight;
+                j += 1;
             }
             #[cfg(feature = "debug-optimal")]
             if j >= m {

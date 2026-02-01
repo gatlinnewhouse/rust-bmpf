@@ -3,7 +3,6 @@ use crate::boxmuller;
 #[cfg(feature = "erfinv")]
 use crate::erfinv;
 use crate::{
-    boxmuller::gaussian,
     resample::{Resample, Resampler},
     sim::{
         AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, NDIRNS, RVAR,
@@ -28,8 +27,13 @@ impl CCoord {
         let mut result = self.clone();
         #[cfg(feature = "boxmuller")]
         {
-            result.x += unsafe { gaussian(GPS_VAR) };
-            result.y += unsafe { gaussian(GPS_VAR) };
+            result.x += unsafe { boxmuller::gaussian(GPS_VAR) };
+            result.y += unsafe { boxmuller::gaussian(GPS_VAR) };
+        }
+        #[cfg(feature = "erfinv")]
+        {
+            result.x += unsafe { erfinv::gaussian(GPS_VAR) };
+            result.y += unsafe { erfinv::gaussian(GPS_VAR) };
         }
         result
     }
@@ -58,8 +62,17 @@ impl ACoord {
             use crate::sim::IMU_A_VAR;
             use crate::sim::IMU_R_VAR;
 
-            result.r += unsafe { gaussian(IMU_R_VAR * dt) };
-            result.t = normalize_angle(result.t + unsafe { gaussian(IMU_A_VAR * dt) });
+            #[cfg(feature = "boxmuller")]
+            {
+                result.r += unsafe { boxmuller::gaussian(IMU_R_VAR * dt) };
+                result.t =
+                    normalize_angle(result.t + unsafe { boxmuller::gaussian(IMU_A_VAR * dt) });
+            }
+            #[cfg(feature = "erfinv")]
+            {
+                result.r += unsafe { erfinv::gaussian(IMU_R_VAR * dt) };
+                result.t = normalize_angle(result.t + unsafe { erfinv::gaussian(IMU_A_VAR * dt) });
+            }
         }
         if result.r < 0.0 {
             result.r = -result.r;
@@ -370,6 +383,16 @@ impl BpfState {
                 dt,
             );
             let w = gp * ip * self.pstates[self.which_particle as usize].data[i].weight;
+            #[cfg(feature = "debug")]
+            {
+                if i == 0 {
+                    eprintln!("gp={} ip={} w={}", gp, ip, w);
+                    eprintln!(
+                        "gps=({} {}), imu=(r={}, t={})",
+                        self.gps.x, self.gps.y, self.imu.r, self.imu.t
+                    );
+                }
+            }
             self.pstates[self.which_particle as usize].data[i].weight = w;
             tweight += w;
         }

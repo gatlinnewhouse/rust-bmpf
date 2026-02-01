@@ -1,7 +1,4 @@
-use rand::{
-    Rng,
-    distr::{Distribution, Uniform},
-};
+use rand::Rng;
 
 #[cfg(feature = "boxmuller")]
 pub mod boxmuller;

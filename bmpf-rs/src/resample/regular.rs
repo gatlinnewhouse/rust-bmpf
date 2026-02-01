@@ -32,8 +32,8 @@ impl Resample for Regular {
         let mut t = 0f64;
         for i in 0..n {
             while t + particle.data[j].weight < u0 && j < m {
-                j += 1;
                 t += particle.data[j].weight;
+                j += 1;
             }
             #[cfg(feature = "debug-regular")]
             if j >= m {
