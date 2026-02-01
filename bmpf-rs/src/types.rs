@@ -225,21 +225,29 @@ impl ParticleInfo {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Particles {
-    pub data: [ParticleInfo; 100],
+    pub data: Vec<ParticleInfo>,
 }
 
 impl Default for Particles {
     fn default() -> Self {
         Self {
-            data: [ParticleInfo::default(); 100],
+            data: vec![ParticleInfo::default(); 100],
+        }
+    }
+}
+
+impl Particles {
+    fn new(nparticles: usize) -> Self {
+        Self {
+            data: vec![ParticleInfo::default(); nparticles],
         }
     }
 }
 
 pub struct BpfState {
-    pstates: [Particles; 2],
+    pstates: Vec<Particles>,
     which_particle: bool,
     resampler: Resampler,
     sort: bool,
@@ -256,7 +264,7 @@ pub struct BpfState {
 impl Default for BpfState {
     fn default() -> Self {
         Self {
-            pstates: [Particles::default(); 2],
+            pstates: vec![Particles::default(); 2],
             which_particle: false,
             resampler: Resampler::new("naive"),
             sort: false,
@@ -273,6 +281,30 @@ impl Default for BpfState {
 }
 
 impl BpfState {
+    pub fn new(
+        resampler: &str,
+        sort: bool,
+        nparticles: usize,
+        report_particles: i32,
+        best_particle: bool,
+        resample_interval: usize,
+    ) -> Self {
+        Self {
+            pstates: vec![Particles::new(nparticles); 2],
+            which_particle: false,
+            resampler: Resampler::new(resampler),
+            sort,
+            nparticles,
+            report_particles,
+            best_particle,
+            resample_interval,
+            resample_count: 0,
+            vehicle: CCoord::default(),
+            gps: CCoord::default(),
+            imu: ACoord::default(),
+        }
+    }
+
     pub fn init_particles(&mut self) {
         let invscale = 1.0 / self.nparticles as f64;
         self.which_particle = false;
@@ -385,7 +417,7 @@ impl BpfState {
         }
         self.resample_count = (self.resample_count + 1) % self.resample_interval;
         if self.resample_count == 0 {
-            let mut new_particle = self.pstates[!self.which_particle as usize];
+            let mut new_particle = self.pstates[!self.which_particle as usize].clone();
             best = self.resampler.resample(
                 tweight,
                 self.nparticles,
@@ -394,7 +426,7 @@ impl BpfState {
                 &mut new_particle,
                 self.sort,
             );
-            self.pstates[!self.which_particle as usize] = new_particle;
+            self.pstates[!self.which_particle as usize] = new_particle.clone();
             self.which_particle = !self.which_particle;
             for i in 0..self.nparticles {
                 self.pstates[self.which_particle as usize].data[i].weight =

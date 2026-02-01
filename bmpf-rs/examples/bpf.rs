@@ -1,54 +1,56 @@
 use bmpf_rs::types::BpfState;
 use clap::Parser;
 use std::{
+    f64::consts::PI,
     fs::File,
     io::{self, BufRead},
     path::Path,
 };
 
 #[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
 struct Args {
     /// Number of particles
-    #[arg(short, long, default_value_t = 100)]
+    #[arg(long, default_value_t = 100)]
     nparticles: usize,
 
     /// Sampler name
-    #[arg(short, long)]
+    #[arg(long)]
     sampler: String,
 
     /// Sort?
-    #[arg(short, long, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     sort: bool,
 
     /// Report particles?
-    #[arg(short, long, default_value_t = false)]
-    report_particles: bool,
+    #[arg(long, default_value_t = 1000)]
+    report_particles: i32,
 
     /// Best particle recording?
-    #[arg(short, long, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     best_particle: bool,
 
     /// Resampling interval
-    #[arg(short, long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1)]
     resample_interval: usize,
 
     /// Fast direction
-    #[arg(short, long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1)]
     fast_direction: i32,
 
-    #[arg(short, long)]
+    #[arg(long, default_value_t = PI / 32f64)]
     avar: f64,
 
-    #[arg(short, long)]
+    #[arg(long, default_value_t = 0.1f64)]
     rvar: f64,
 
-    #[arg(short, long)]
+    #[arg(long, default_value_t = 1.0f64)]
     gps_var: f64,
 
-    #[arg(short, long)]
+    #[arg(long, default_value_t = 0.5f64)]
     imu_r_var: f64,
 
-    #[arg(short, long)]
+    #[arg(long, default_value_t = PI / 8.0f64)]
     imu_a_var: f64,
 }
 
@@ -61,7 +63,17 @@ where
 }
 
 fn main() {
-    let mut state = BpfState::default();
+    let args = Args::parse();
+
+    let mut state = BpfState::new(
+        &args.sampler,
+        args.sort,
+        args.nparticles,
+        args.report_particles,
+        args.best_particle,
+        args.resample_interval,
+    );
+
     state.init_particles();
     let mut t_ms = 0;
     let mut t_last = 0;
