@@ -18,6 +18,10 @@ struct Args {
     #[arg(long)]
     sampler: String,
 
+    /// File path
+    #[arg(long)]
+    file: String,
+
     /// Sort?
     #[arg(long, default_value_t = false)]
     sort: bool,
@@ -78,7 +82,7 @@ fn main() {
     let mut t_ms = 0;
     let mut t_last = 0;
     let mut t = 0.0;
-    if let Ok(mut lines) = read_lines("./vehicle.dat") {
+    if let Ok(mut lines) = read_lines(args.file) {
         // Read first line to initialize
         if let Some(Ok(first_line)) = lines.next() {
             t_ms = state.parse_line(first_line);
