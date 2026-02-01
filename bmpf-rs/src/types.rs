@@ -5,8 +5,8 @@ use crate::erfinv;
 use crate::{
     resample::{Resample, Resampler},
     sim::{
-        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, NDIRNS, RVAR,
-        angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn,
+        angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn, CosDirn, AVAR, BOX_DIM,
+        FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS, RVAR,
     },
     uniform,
 };
@@ -39,7 +39,11 @@ impl CCoord {
     }
 
     fn gps_prob(&self, state: &VehicleState) -> f64 {
-        if state.posn.x != clip_box(state.posn.x) || state.posn.y != clip_box(state.posn.y) {
+        if state.posn.x < -BOX_DIM
+            || state.posn.x > BOX_DIM
+            || state.posn.y < -BOX_DIM
+            || state.posn.y > BOX_DIM
+        {
             return 0.0;
         }
         let px = gprob(state.posn.x - self.x, unsafe { GPS_VAR });
@@ -82,7 +86,7 @@ impl ACoord {
     }
 
     fn imu_prob(&self, state: &VehicleState, dt: f64) -> f64 {
-        if state.vel.r != clip_speed(state.vel.r) {
+        if state.vel.r < 0.0 || state.vel.r > MAX_SPEED {
             return 0.0;
         }
         let pr = gprob(state.vel.r - self.r, IMU_R_VAR / dt);

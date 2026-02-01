@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 pub static BOX_DIM: f64 = 20.0;
-static MAX_SPEED: f64 = 2.0;
+pub static MAX_SPEED: f64 = 2.0;
 
 pub static AVAR: f64 = PI / 32f64;
 pub static RVAR: f64 = 0.1f64;
