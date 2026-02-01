@@ -59,7 +59,7 @@ impl ACoord {
             use crate::sim::IMU_R_VAR;
 
             result.r += unsafe { gaussian(IMU_R_VAR * dt) };
-            result.t += normalize_angle(result.t + unsafe { gaussian(IMU_A_VAR * dt) });
+            result.t = normalize_angle(result.t + unsafe { gaussian(IMU_A_VAR * dt) });
         }
         if result.r < 0.0 {
             result.r = -result.r;
