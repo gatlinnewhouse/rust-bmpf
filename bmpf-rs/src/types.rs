@@ -81,7 +81,7 @@ impl ACoord {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum BounceProblem {
     BounceOk,
     BounceX,
@@ -199,7 +199,7 @@ impl VehicleState {
                 }
             }
         }
-        assert!(b == BounceProblem::BounceOk)
+        assert!(b == BounceProblem::BounceOk, "{:?} != BounceOk", b)
     }
 }
 
@@ -319,12 +319,13 @@ impl BpfState {
         // est_state.init_state();
         #[cfg(feature = "debug")]
         {
+            tweight = 0.0;
             for i in 0..self.nparticles {
                 tweight += self.pstates[self.which_particle as usize].data[i].weight;
-                assert!(tweight > 0.00001);
             }
-            tweight = 0.0;
+            assert!(tweight > 0.00001, "{} < 0.00001", tweight);
         }
+        tweight = 0.0;
         for i in 0..self.nparticles {
             self.pstates[self.which_particle as usize].data[i]
                 .state
@@ -341,7 +342,7 @@ impl BpfState {
             tweight += w;
         }
         #[cfg(feature = "debug")]
-        assert!(tweight > 0.00001);
+        assert!(tweight > 0.00001, "{} < 0.00001", tweight);
         let invtweight = 1.0 / tweight;
         for i in 0..self.nparticles {
             self.pstates[self.which_particle as usize].data[i].weight *= invtweight;

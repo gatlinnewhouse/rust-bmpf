@@ -10,7 +10,7 @@ pub static IMU_R_VAR: f64 = 0.5f64;
 pub static IMU_A_VAR: f64 = PI / 8.0f64;
 pub static NDIRNS: i32 = 1024;
 
-pub static FAST_DIRECTION: i32 = 0;
+pub static FAST_DIRECTION: i32 = 1;
 static COS_DIRN: [f32; NDIRNS as usize] = [0f32; NDIRNS as usize];
 
 #[derive(Clone, Copy)]

@@ -17,6 +17,7 @@ erfinv = []
 boxmuller = []
 
 # Resampler features
+debug-all = ["debug", "debug-heapify", "debug-logm", "debug-logm-search", "debug-naive", "debug-optimal", "debug-regular", "diagnostic-print"]
 debug = []
 debug-heapify = []
 debug-logm = []

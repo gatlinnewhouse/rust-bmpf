@@ -1,7 +1,7 @@
 use rand::random;
 
 fn erfinv(x: f32) -> f32 {
-    assert!(0.0 <= x && x < 1.0);
+    assert!(0.0 <= x && x < 1.0, "{} < 0.0 or > 1.0", x);
     if x <= 0.4 {
         return -0.003241691 + x * 0.922235728;
     }

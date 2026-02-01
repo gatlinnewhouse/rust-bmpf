@@ -1,10 +1,56 @@
+use bmpf_rs::types::BpfState;
+use clap::Parser;
 use std::{
     fs::File,
     io::{self, BufRead},
     path::Path,
 };
 
-use bmpf_rs::types::BpfState;
+#[derive(Parser, Debug)]
+struct Args {
+    /// Number of particles
+    #[arg(short, long, default_value_t = 100)]
+    nparticles: usize,
+
+    /// Sampler name
+    #[arg(short, long)]
+    sampler: String,
+
+    /// Sort?
+    #[arg(short, long, default_value_t = false)]
+    sort: bool,
+
+    /// Report particles?
+    #[arg(short, long, default_value_t = false)]
+    report_particles: bool,
+
+    /// Best particle recording?
+    #[arg(short, long, default_value_t = false)]
+    best_particle: bool,
+
+    /// Resampling interval
+    #[arg(short, long, default_value_t = 1)]
+    resample_interval: usize,
+
+    /// Fast direction
+    #[arg(short, long, default_value_t = 1)]
+    fast_direction: i32,
+
+    #[arg(short, long)]
+    avar: f64,
+
+    #[arg(short, long)]
+    rvar: f64,
+
+    #[arg(short, long)]
+    gps_var: f64,
+
+    #[arg(short, long)]
+    imu_r_var: f64,
+
+    #[arg(short, long)]
+    imu_a_var: f64,
+}
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
 where
