@@ -1,13 +1,23 @@
 use rand::Rng;
+use std::cell::RefCell;
+use ziggurat_rs::Ziggurat;
 
-#[cfg(feature = "boxmuller")]
-pub mod boxmuller;
-#[cfg(feature = "erfinv")]
-pub mod erfinv;
 pub mod resample;
 pub mod sim;
 pub mod types;
 
+thread_local! {
+    static ZIGGURAT: RefCell<Ziggurat> = RefCell::new(Ziggurat::default());
+}
+
 pub fn uniform() -> f64 {
     rand::rng().random()
+}
+
+pub fn gaussian(sigma: f64) -> f64 {
+    ZIGGURAT.with(|z| z.borrow_mut().gaussian(sigma))
+}
+
+pub fn polynomial(n: i32) -> f64 {
+    ZIGGURAT.with(|z| z.borrow_mut().polynomial(n))
 }

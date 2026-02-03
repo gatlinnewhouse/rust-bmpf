@@ -11,10 +11,6 @@ ziggurat-rs = { path = "../ziggurat-rs" }
 clap = { version = "4.5", features = ["derive"] }
 
 [features]
-default = ["boxmuller"]
-erfinv = []
-boxmuller = []
-
 # Resampler features
 debug-all = ["debug", "debug-heapify", "debug-logm", "debug-logm-search", "debug-naive", "debug-optimal", "debug-regular", "diagnostic-print"]
 debug = []

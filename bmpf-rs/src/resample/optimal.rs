@@ -1,5 +1,4 @@
-use crate::{resample::Resample, uniform};
-use ziggurat_rs::Ziggurat;
+use crate::{polynomial, resample::Resample, uniform};
 
 #[derive(Default)]
 pub struct Optimal {}
@@ -7,8 +6,7 @@ pub struct Optimal {}
 #[inline]
 fn nform(n: i32, sort: bool) -> f64 {
     if sort {
-        let mut z = Ziggurat::default();
-        return z.polynomial(n);
+        return polynomial(n);
     }
     1.0f64 - uniform().powf(1.0 / (n + 1) as f64)
 }
