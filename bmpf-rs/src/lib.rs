@@ -9,5 +9,5 @@ pub mod sim;
 pub mod types;
 
 pub fn uniform() -> f64 {
-    rand::thread_rng().r#gen::<f32>() as f64
+    rand::rng().random()
 }
