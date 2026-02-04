@@ -1,8 +1,5 @@
-#[cfg(feature = "boxmuller")]
-use crate::boxmuller;
-#[cfg(feature = "erfinv")]
-use crate::erfinv;
 use crate::{
+    gaussian,
     resample::{Resample, Resampler},
     sim::{
         AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS,
@@ -25,16 +22,8 @@ fn gprob(delta: f64, sd: f64) -> f64 {
 impl CCoord {
     fn gps_measure(&self) -> CCoord {
         let mut result = self.clone();
-        #[cfg(feature = "boxmuller")]
-        {
-            result.x += unsafe { boxmuller::gaussian(GPS_VAR) };
-            result.y += unsafe { boxmuller::gaussian(GPS_VAR) };
-        }
-        #[cfg(feature = "erfinv")]
-        {
-            result.x += unsafe { erfinv::gaussian(GPS_VAR as f32) };
-            result.y += unsafe { erfinv::gaussian(GPS_VAR as f32) };
-        }
+        result.x += gaussian(unsafe { GPS_VAR });
+        result.y += gaussian(unsafe { GPS_VAR });
         result
     }
 
@@ -61,17 +50,8 @@ pub struct ACoord {
 impl ACoord {
     fn measure(&self, dt: f64) -> ACoord {
         let mut result = self.clone();
-        #[cfg(feature = "boxmuller")]
-        {
-            result.r += unsafe { boxmuller::gaussian(IMU_R_VAR * dt) };
-            result.t = normalize_angle(result.t + unsafe { boxmuller::gaussian(IMU_A_VAR * dt) });
-        }
-        #[cfg(feature = "erfinv")]
-        {
-            result.r += unsafe { erfinv::gaussian((IMU_R_VAR * dt) as f32) };
-            result.t =
-                normalize_angle(result.t + unsafe { erfinv::gaussian((IMU_A_VAR * dt) as f32) });
-        }
+        result.r += gaussian(IMU_R_VAR * dt);
+        result.t = normalize_angle(result.t + gaussian(IMU_A_VAR * dt));
         if result.r < 0.0 {
             result.r = -result.r;
             result.t = normalize_angle(result.t + PI);
@@ -173,21 +153,11 @@ impl VehicleState {
     }
 
     pub fn update_state(&mut self, dt: f64, noise: i32) {
-        #[cfg(feature = "erfinv")]
         let mut r0 = clip_speed(
-            self.vel.r + erfinv::gaussian(RVAR as f32) as f64 * ((1 + 8 * noise) as f64),
+            self.vel.r + gaussian(RVAR) * ((1 + 8 * noise) as f64),
         );
-        #[cfg(feature = "erfinv")]
         let mut t0 = normalize_angle(
-            self.vel.t + erfinv::gaussian(AVAR as f32) as f64 * ((1 + 8 * noise) as f64),
-        );
-        #[cfg(feature = "boxmuller")]
-        let mut r0 = clip_speed(
-            self.vel.r + unsafe { boxmuller::gaussian(RVAR) } * ((1 + 8 * noise) as f64),
-        );
-        #[cfg(feature = "boxmuller")]
-        let mut t0 = normalize_angle(
-            self.vel.t + unsafe { boxmuller::gaussian(AVAR) } * ((1 + 8 * noise) as f64),
+            self.vel.t + gaussian(AVAR) * ((1 + 8 * noise) as f64),
         );
         let mut b = self.bounce(r0, t0, dt, noise);
         if b != BounceProblem::BounceOk {
