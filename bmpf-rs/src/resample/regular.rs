@@ -1,5 +1,4 @@
-use crate::{resample::Resample, types::Particles};
-use rand::random;
+use crate::{rand32, resample::Resample, types::Particles};
 
 #[derive(Default)]
 pub struct Regular {}
@@ -21,8 +20,8 @@ impl Resample for Regular {
         // Shuffle
         if sort {
             for i in 0..m - 1 {
-                let j = random::<i32>() % (m - i) as i32 + i as i32;
-                particle.data.swap(j as usize, i);
+                let j = rand32() as usize % (m - i) + i;
+                particle.data.swap(j, i);
             }
         }
 

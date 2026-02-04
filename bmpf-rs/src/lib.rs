@@ -21,3 +21,7 @@ pub fn gaussian(sigma: f64) -> f64 {
 pub fn polynomial(n: i32) -> f64 {
     ZIGGURAT.with(|z| z.borrow_mut().polynomial(n))
 }
+
+pub fn rand32() -> u32 {
+    ZIGGURAT.with(|z| z.borrow_mut().rand32())
+}
