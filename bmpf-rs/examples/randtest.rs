@@ -1,6 +1,5 @@
-use bmpf_rs::uniform;
+use bmpf_rs::{polynomial, uniform};
 use clap::Parser;
-use ziggurat_rs::Ziggurat;
 
 static NBINS: f64 = 500f64;
 static N: i32 = 50;
@@ -21,7 +20,7 @@ fn minrand(n: usize) -> f64 {
             x = y;
         }
     }
-    x as f64
+    x
 }
 
 fn main() {
@@ -29,16 +28,14 @@ fn main() {
     let mut sim = [0i32; NBINS as usize];
     let mut simp = [0i32; NBINS as usize];
 
-    let mut z = Ziggurat::default();
-
     let args = Args::parse();
     let n = args.iterations;
     for _i in 0..n {
         let mut x0 = minrand(N as usize);
         real[(NBINS * x0).floor() as usize] += 1;
-        x0 = 1.0f64 - ((uniform() as f64).powf(1.0 / (N as f64 + 1.0f64)));
+        x0 = 1.0f64 - ((uniform()).powf(1.0 / (N as f64 + 1.0f64)));
         sim[(NBINS * x0).floor() as usize] += 1;
-        x0 = z.polynomial(N);
+        x0 = polynomial(N);
         simp[(NBINS * x0).floor() as usize] += 1;
     }
     // println!("{} {}", rand_calls, rand_steps);

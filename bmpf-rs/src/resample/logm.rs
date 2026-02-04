@@ -29,7 +29,7 @@ impl<'a> Logm {
         m: usize,
         particles: &'a Particles,
     ) -> &'a ParticleInfo {
-        let mut w = uniform() as f64 * scale;
+        let mut w = uniform() * scale;
         #[cfg(feature = "debug-logm")]
         let mut j = 0usize;
         for mut i in 0..m {
@@ -155,7 +155,7 @@ impl<'a> Logm {
 impl Resample for Logm {
     fn resample(
         &mut self,
-        scale: f64,
+        _scale: f64,
         m: usize,
         particle: &mut Particles,
         n: usize,
@@ -183,7 +183,7 @@ impl Resample for Logm {
         }
         let invscale = 1.0 / self.tweight[0];
         for i in 0..n {
-            new_particle.data[i] = self.weighted_sample(self.tweight[0], m, particle).clone();
+            new_particle.data[i] = *self.weighted_sample(self.tweight[0], m, particle);
             new_particle.data[i].weight *= invscale;
             if new_particle.data[i].weight > best_w {
                 best_w = new_particle.data[i].weight;

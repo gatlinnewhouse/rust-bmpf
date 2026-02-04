@@ -21,7 +21,7 @@ fn gprob(delta: f64, sd: f64) -> f64 {
 
 impl CCoord {
     fn gps_measure(&self) -> CCoord {
-        let mut result = self.clone();
+        let mut result = *self;
         result.x += gaussian(unsafe { GPS_VAR });
         result.y += gaussian(unsafe { GPS_VAR });
         result
@@ -49,7 +49,7 @@ pub struct ACoord {
 
 impl ACoord {
     fn measure(&self, dt: f64) -> ACoord {
-        let mut result = self.clone();
+        let mut result = *self;
         result.r += gaussian(IMU_R_VAR * dt);
         result.t = normalize_angle(result.t + gaussian(IMU_A_VAR * dt));
         if result.r < 0.0 {
@@ -98,7 +98,7 @@ impl VehicleState {
         self.vel.measure(dt)
     }
 
-    fn bounce(&mut self, r: f64, t: f64, dt: f64, noise: i32) -> BounceProblem {
+    fn bounce(&mut self, r: f64, t: f64, dt: f64, _noise: i32) -> BounceProblem {
         let dc0;
         let dms0;
         let mut x0;
@@ -145,20 +145,16 @@ impl VehicleState {
     }
 
     pub fn init_state(&mut self) {
-        self.posn.x = (uniform() as f64 * 2.0 - 1.0) * BOX_DIM;
-        self.posn.y = (uniform() as f64 * 2.0 - 1.0) * BOX_DIM;
-        self.vel.r = uniform() as f64;
-        self.vel.t = normalize_angle(uniform() as f64 * (PI / 2.0f64));
+        self.posn.x = (uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.vel.r = uniform();
+        self.vel.t = normalize_angle(uniform() * (PI / 2.0f64));
         self.cos_dirn.init_dirn();
     }
 
     pub fn update_state(&mut self, dt: f64, noise: i32) {
-        let mut r0 = clip_speed(
-            self.vel.r + gaussian(RVAR) * ((1 + 8 * noise) as f64),
-        );
-        let mut t0 = normalize_angle(
-            self.vel.t + gaussian(AVAR) * ((1 + 8 * noise) as f64),
-        );
+        let mut r0 = clip_speed(self.vel.r + gaussian(RVAR) * ((1 + 8 * noise) as f64));
+        let mut t0 = normalize_angle(self.vel.t + gaussian(AVAR) * ((1 + 8 * noise) as f64));
         let mut b = self.bounce(r0, t0, dt, noise);
         if b != BounceProblem::BounceOk {
             r0 = self.vel.r;
@@ -322,12 +318,12 @@ impl BpfState {
     }
 
     pub fn bpf_step(&mut self, t: f64, dt: f64, report: bool) {
-        let mut tweight = 0.0;
-        let mut best = 0usize;
+        let mut tweight;
+        let mut best;
         #[cfg(feature = "diagnostic-print")]
         let mut worst = 0usize;
-        let mut best_weight = 0.0;
-        let mut worst_weight = 0.0;
+        let mut best_weight;
+        let mut worst_weight;
         let mut est_state = VehicleState::default();
         // est_state.init_state();
         #[cfg(feature = "debug")]

@@ -40,7 +40,7 @@ impl Resample for Optimal {
                 abort();
             }
 
-            new_particle.data[i] = particle.data[j].clone();
+            new_particle.data[i] = particle.data[j];
             new_particle.data[i].weight *= invscale;
             if new_particle.data[i].weight > best_w {
                 best_w = new_particle.data[i].weight;

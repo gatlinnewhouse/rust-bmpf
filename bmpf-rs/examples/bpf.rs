@@ -79,7 +79,7 @@ fn main() {
     );
 
     state.init_particles();
-    let mut t_ms = 0;
+    let mut t_ms;
     let mut t_last = 0;
     let mut t = 0.0;
     if let Ok(mut lines) = read_lines(args.file) {
@@ -103,7 +103,7 @@ fn main() {
             if report {
                 t_last = t_ms;
             }
-            print!("\n");
+            println!();
         }
     }
 }
