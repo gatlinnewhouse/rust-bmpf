@@ -1,7 +1,6 @@
 #![feature(float_erf)]
-
+use gpoint::GPoint;
 use std::f64::consts::FRAC_1_SQRT_2;
-
 use ziggurat_rs::Ziggurat;
 
 const NV: usize = 10000000;
@@ -53,6 +52,6 @@ fn main() {
     (0..NB).for_each(|i| {
         let x = binwidth * (i as f64 + 0.5) + minv;
         let expected = a * (x * x * b).exp();
-        println!("{:.7} {} {:.7}", x, bin[i], expected);
+        println!("{} {} {}", GPoint(x), bin[i], GPoint(expected));
     });
 }

@@ -1,5 +1,6 @@
 use bmpf_rs::types::BpfState;
 use clap::Parser;
+use gpoint::GPoint;
 use std::{
     f64::consts::PI,
     fs::File,
@@ -98,7 +99,7 @@ fn main() {
                 report = t_ms - t_last >= state.report_particles;
             }
             t = t0;
-            print!("{} {}", state.vehicle.x, state.vehicle.y);
+            print!("{} {}", GPoint(state.vehicle.x), GPoint(state.vehicle.y));
             state.bpf_step(t, dt, report);
             if report {
                 t_last = t_ms;

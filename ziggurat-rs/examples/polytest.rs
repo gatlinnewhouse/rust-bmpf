@@ -1,4 +1,5 @@
 use core::f64::{self};
+use gpoint::GPoint;
 use ziggurat_rs::Ziggurat;
 
 static NV: usize = 10000000;
@@ -36,6 +37,6 @@ fn main() {
         let x0 = binwidth * i as f64;
         let x1 = x0 + binwidth;
         let a = (1.0f64 - x0).powi(PN + 1) - (1.0f64 - x1).powi(PN + 1);
-        println!("{:.7} {} {:.7}", x, bin[i], NV as f64 * a);
+        println!("{} {} {}", GPoint(x), bin[i], GPoint(NV as f64 * a));
     });
 }

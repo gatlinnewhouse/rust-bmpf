@@ -7,6 +7,7 @@ use crate::{
     },
     uniform,
 };
+use gpoint::GPoint;
 use std::{cmp::Ordering, f64::consts::PI, fs::OpenOptions, io::Write};
 
 #[derive(Default, Clone, Copy)]
@@ -332,7 +333,7 @@ impl BpfState {
             for i in 0..self.nparticles {
                 tweight += self.pstates[self.which_particle as usize].data[i].weight;
             }
-            assert!(tweight > 0.00001, "{} < 0.00001", tweight);
+            assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         }
         tweight = 0.0;
         for i in 0..self.nparticles {
@@ -350,10 +351,13 @@ impl BpfState {
             #[cfg(feature = "debug")]
             {
                 if i == 0 {
-                    eprintln!("gp={} ip={} w={}", gp, ip, w);
+                    eprintln!("gp={} ip={} w={}", GPoint(gp), GPoint(ip), GPoint(w));
                     eprintln!(
                         "gps=({} {}), imu=(r={}, t={})",
-                        self.gps.x, self.gps.y, self.imu.r, self.imu.t
+                        GPoint(self.gps.x),
+                        GPoint(self.gps.y),
+                        GPoint(self.imu.r),
+                        GPoint(self.imu.t)
                     );
                 }
             }
@@ -397,7 +401,7 @@ impl BpfState {
                     .posn
                     .y;
                 let w = self.pstates[self.which_particle as usize].data[i].weight;
-                if let Err(e) = writeln!(file, "{} {} {}", px, py, w) {
+                if let Err(e) = writeln!(file, "{} {} {}", GPoint(px), GPoint(py), GPoint(w)) {
                     eprintln!("Could not write to benchtmp/particles-{}.dat: {}", t, e)
                 }
             }
@@ -445,45 +449,61 @@ impl BpfState {
         {
             print!(
                 "  {} {} {}",
-                best_weight,
-                self.pstates[self.which_particle as usize].data[best]
-                    .state
-                    .posn
-                    .x,
-                self.pstates[self.which_particle as usize].data[best]
-                    .state
-                    .posn
-                    .y,
+                GPoint(best_weight),
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[best]
+                        .state
+                        .posn
+                        .x
+                ),
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[best]
+                        .state
+                        .posn
+                        .y
+                ),
             );
             print!(
                 "  {} {} {}",
-                worst_weight,
-                self.pstates[self.which_particle as usize].data[worst]
-                    .state
-                    .posn
-                    .x,
-                self.pstates[self.which_particle as usize].data[worst]
-                    .state
-                    .posn
-                    .y,
+                GPoint(worst_weight),
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[worst]
+                        .state
+                        .posn
+                        .x
+                ),
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[worst]
+                        .state
+                        .posn
+                        .y
+                ),
             );
         }
         #[cfg(not(feature = "diagnostic-print"))]
         {
             print!(
                 "  {} {}",
-                self.pstates[self.which_particle as usize].data[best]
-                    .state
-                    .posn
-                    .x,
-                self.pstates[self.which_particle as usize].data[best]
-                    .state
-                    .posn
-                    .y
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[best]
+                        .state
+                        .posn
+                        .x
+                ),
+                GPoint(
+                    self.pstates[self.which_particle as usize].data[best]
+                        .state
+                        .posn
+                        .y
+                )
             );
         }
         if !self.best_particle {
-            print!("  {} {}", est_state.posn.x, est_state.posn.y);
+            print!(
+                "  {} {}",
+                GPoint(est_state.posn.x),
+                GPoint(est_state.posn.y)
+            );
         }
     }
 }
