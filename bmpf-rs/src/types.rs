@@ -386,7 +386,7 @@ impl BpfState {
                 .append(true)
                 .create(true)
                 .open(filename)
-                .expect("Could not open file");
+                .unwrap_or_else(|_| panic!("Could not open file at benchtmp/particles-{}.dat", t));
             for i in 0..self.nparticles {
                 let px = self.pstates[self.which_particle as usize].data[i]
                     .state
@@ -398,7 +398,7 @@ impl BpfState {
                     .y;
                 let w = self.pstates[self.which_particle as usize].data[i].weight;
                 if let Err(e) = writeln!(file, "{} {} {}", px, py, w) {
-                    eprintln!("Could not write to file: {}", e)
+                    eprintln!("Could not write to benchtmp/particles-{}.dat: {}", t, e)
                 }
             }
         }
