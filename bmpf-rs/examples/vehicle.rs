@@ -1,4 +1,5 @@
 use bmpf_rs::types::VehicleState;
+use gpoint::GPoint;
 
 fn run() {
     let mut t = 0.0f64;
@@ -14,7 +15,13 @@ fn run() {
         let imu = vehicle.imu_measure(dt);
         println!(
             "{} {} {} {} {} {} {}",
-            msec, vehicle.posn.x, vehicle.posn.y, gps.x, gps.y, imu.r, imu.t
+            msec,
+            GPoint(vehicle.posn.x),
+            GPoint(vehicle.posn.y),
+            GPoint(gps.x),
+            GPoint(gps.y),
+            GPoint(imu.r),
+            GPoint(imu.t)
         );
         t += dt;
     }
