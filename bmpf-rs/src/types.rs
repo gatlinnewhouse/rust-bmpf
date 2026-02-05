@@ -365,7 +365,7 @@ impl BpfState {
             tweight += w;
         }
         #[cfg(feature = "debug")]
-        assert!(tweight > 0.00001, "{} < 0.00001", tweight);
+        assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         let invtweight = 1.0 / tweight;
         for i in 0..self.nparticles {
             self.pstates[self.which_particle as usize].data[i].weight *= invtweight;
