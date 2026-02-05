@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::cell::RefCell;
 use ziggurat_rs::Ziggurat;
 
@@ -11,7 +10,7 @@ thread_local! {
 }
 
 pub fn uniform() -> f64 {
-    rand::rng().random()
+    ZIGGURAT.with(|z| z.borrow_mut().uniform())
 }
 
 pub fn gaussian(sigma: f64) -> f64 {
