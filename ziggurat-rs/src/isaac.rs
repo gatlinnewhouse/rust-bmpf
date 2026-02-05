@@ -36,6 +36,9 @@ impl IsaacRng {
             self.randrsl[i] = seed;
         }
         self.init(true);
+
+        // discard first batch, return values from second
+        self.isaac();
     }
 
     /// Initialize the generator
