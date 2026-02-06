@@ -17,7 +17,9 @@ pub struct CCoord {
 }
 
 fn gprob(delta: f64, sd: f64) -> f64 {
-    (-0.5 * delta * delta / (sd * sd)).exp()
+    let inv_sd = 1.0 / sd;
+    let scaled = delta * inv_sd;
+    (-0.5 * scaled * scaled).exp()
 }
 
 impl CCoord {
@@ -60,15 +62,15 @@ impl ACoord {
         result
     }
 
-    fn imu_prob(&self, state: &VehicleState, dt: f64) -> f64 {
+    fn imu_prob(&self, state: &VehicleState, inv_dt: f64) -> f64 {
         if state.vel.r < 0.0 || state.vel.r > MAX_SPEED {
             return 0.0;
         }
-        let pr = gprob(state.vel.r - self.r, IMU_R_VAR / dt);
+        let pr = gprob(state.vel.r - self.r, IMU_R_VAR * inv_dt);
         let dth = (state.vel.t - self.t)
             .abs()
             .min(((state.vel.t - self.t).abs() - 2.0 * PI).abs());
-        let pt = gprob(dth, IMU_A_VAR / dt);
+        let pt = gprob(dth, IMU_A_VAR * inv_dt);
         pr * pt
     }
 }
@@ -225,7 +227,7 @@ impl Particles {
 }
 
 pub struct BpfState {
-    pstates: Vec<Particles>,
+    pstates: [Particles; 2],
     which_particle: bool,
     resampler: Resampler,
     sort: bool,
@@ -242,7 +244,7 @@ pub struct BpfState {
 impl Default for BpfState {
     fn default() -> Self {
         Self {
-            pstates: vec![Particles::default(); 2],
+            pstates: [Particles::default(), Particles::default()],
             which_particle: false,
             resampler: Resampler::new("naive", 100),
             sort: false,
@@ -268,7 +270,7 @@ impl BpfState {
         resample_interval: usize,
     ) -> Self {
         Self {
-            pstates: vec![Particles::new(nparticles); 2],
+            pstates: [Particles::new(nparticles), Particles::new(nparticles)],
             which_particle: false,
             resampler: Resampler::new(resampler, nparticles),
             sort,
@@ -336,18 +338,16 @@ impl BpfState {
             assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         }
         tweight = 0.0;
-        for i in 0..self.nparticles {
-            self.pstates[self.which_particle as usize].data[i]
-                .state
-                .update_state(dt, 1);
-            let gp = self
-                .gps
-                .gps_prob(&self.pstates[self.which_particle as usize].data[i].state);
-            let ip = self.imu.imu_prob(
-                &self.pstates[self.which_particle as usize].data[i].state,
-                dt,
-            );
-            let w = gp * ip * self.pstates[self.which_particle as usize].data[i].weight;
+        for (i, particle) in self.pstates[self.which_particle as usize]
+            .data
+            .iter_mut()
+            .enumerate()
+        {
+            particle.state.update_state(dt, 1);
+            let inv_dt = 1.0 / dt;
+            let gp = self.gps.gps_prob(&particle.state);
+            let ip = self.imu.imu_prob(&particle.state, inv_dt);
+            let w = gp * ip * particle.weight;
             #[cfg(feature = "debug")]
             {
                 if i == 0 {
@@ -361,7 +361,7 @@ impl BpfState {
                     );
                 }
             }
-            self.pstates[self.which_particle as usize].data[i].weight = w;
+            particle.weight = w;
             tweight += w;
         }
         #[cfg(feature = "debug")]
@@ -408,20 +408,24 @@ impl BpfState {
         }
         self.resample_count = (self.resample_count + 1) % self.resample_interval;
         if self.resample_count == 0 {
-            let mut new_particle = self.pstates[!self.which_particle as usize].clone();
+            let [ref mut p0, ref mut p1] = self.pstates;
+            let (current, new) = if self.which_particle {
+                (p1, p0)
+            } else {
+                (p0, p1)
+            };
             best = self.resampler.resample(
                 tweight,
                 self.nparticles,
-                &mut self.pstates[self.which_particle as usize],
+                current,
                 self.nparticles,
-                &mut new_particle,
+                new,
                 self.sort,
             );
-            self.pstates[!self.which_particle as usize] = new_particle.clone();
             self.which_particle = !self.which_particle;
-            for i in 0..self.nparticles {
-                self.pstates[self.which_particle as usize].data[i].weight =
-                    1.0 / self.nparticles as f64;
+            let inv_n = 1.0 / self.nparticles as f64;
+            for particle in self.pstates[self.which_particle as usize].data.iter_mut() {
+                particle.weight = inv_n;
             }
         }
         {

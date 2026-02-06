@@ -1,5 +1,7 @@
 use std::f64::consts::PI;
 
+const TWO_PI: f64 = 2.0f64 * PI;
+
 pub static BOX_DIM: f64 = 20.0;
 pub static MAX_SPEED: f64 = 2.0;
 
@@ -20,7 +22,7 @@ pub struct CosDirn {
 impl CosDirn {
     pub fn init_dirn(&mut self) {
         for i in 0..NDIRNS {
-            let t = i as f64 * 2.0f64 * PI / NDIRNS as f64;
+            let t = i as f64 * TWO_PI / NDIRNS as f64;
             self.data[i as usize] = t.cos();
         }
     }
@@ -36,26 +38,17 @@ impl Default for CosDirn {
 
 #[inline]
 pub fn angle_dirn(t: f64) -> i32 {
-    (t * NDIRNS as f64 / (2.0f64 * PI)).floor() as i32 % NDIRNS
+    (t * NDIRNS as f64 / (TWO_PI)).floor() as i32 % NDIRNS
 }
 
 #[inline]
-pub fn normalize_dirn(mut d: i32) -> i32 {
-    while d < 0 {
-        d += NDIRNS;
-    }
-    d % NDIRNS
+pub fn normalize_dirn(d: i32) -> i32 {
+    d.rem_euclid(NDIRNS)
 }
 
 #[inline]
-pub fn normalize_angle(mut t: f64) -> f64 {
-    while t >= 2.0f64 * PI {
-        t -= 2.0f64 * PI;
-    }
-    while t < 0.0f64 {
-        t += 2.0f64 * PI;
-    }
-    t
+pub fn normalize_angle(t: f64) -> f64 {
+    t.rem_euclid(TWO_PI)
 }
 
 #[inline]
