@@ -2,9 +2,9 @@ use crate::{
     gaussian,
     resample::{Resample, Resampler},
     sim::{
-        AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS,
-        NEG_BOX_DIM, PI_OVER_TWO, RVAR, TWO_PI, angle_dirn, clip_box, clip_speed, normalize_angle,
-        normalize_dirn,
+        AVAR, BOX_DIM, COS_DIRN, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED,
+        NDIRNS, NEG_BOX_DIM, PI_OVER_TWO, RVAR, TWO_PI, angle_dirn, clip_box, clip_speed,
+        normalize_angle, normalize_dirn,
     },
     uniform,
 };
@@ -86,11 +86,11 @@ enum BounceProblem {
     BounceXY,
 }
 
+#[repr(C)]
 #[derive(Clone, Default, Copy)]
 pub struct VehicleState {
     pub posn: CCoord,
     vel: ACoord,
-    cos_dirn: CosDirn,
 }
 
 impl VehicleState {
@@ -114,8 +114,8 @@ impl VehicleState {
         if FAST_DIRECTION == 1 {
             dc0 = angle_dirn(t);
             dms0 = normalize_dirn(dc0 + NDIRNS / 4);
-            x0 = self.posn.x + r * self.cos_dirn.data[dc0 as usize] * dt;
-            y0 = self.posn.y + r * self.cos_dirn.data[dms0 as usize] * dt;
+            x0 = self.posn.x + r * COS_DIRN.data[dc0 as usize] * dt;
+            y0 = self.posn.y + r * COS_DIRN.data[dms0 as usize] * dt;
         } else {
             x0 = self.posn.x + r * t.cos() * dt;
             y0 = self.posn.y - r * t.sin() * dt;
@@ -155,7 +155,6 @@ impl VehicleState {
         self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
         self.vel.r = uniform();
         self.vel.t = normalize_angle(uniform() * (PI_OVER_TWO));
-        self.cos_dirn.init_dirn();
     }
 
     pub fn update_state(&mut self, dt: f64, noise: i32) {

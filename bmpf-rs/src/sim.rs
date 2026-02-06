@@ -1,4 +1,4 @@
-use std::f64::consts::PI;
+use std::{f64::consts::PI, sync::LazyLock};
 
 pub const BOX_DIM: f64 = 20.0;
 pub const MAX_SPEED: f64 = 2.0;
@@ -15,6 +15,12 @@ pub const FAST_DIRECTION: i32 = 0;
 pub const TWO_PI: f64 = 2.0 * PI;
 pub const PI_OVER_TWO: f64 = PI / 2.0;
 pub const NEG_BOX_DIM: f64 = -BOX_DIM;
+
+pub static COS_DIRN: LazyLock<CosDirn> = LazyLock::new(|| {
+    let mut cd = CosDirn::default();
+    cd.init_dirn();
+    cd
+});
 
 #[derive(Clone, Copy)]
 pub struct CosDirn {
