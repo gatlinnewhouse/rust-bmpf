@@ -330,24 +330,21 @@ impl BpfState {
         #[cfg(feature = "debug")]
         {
             tweight = 0.0;
-            for i in 0..self.nparticles {
-                tweight += self.pstates[self.which_particle as usize].data[i].weight;
+            for p in self.pstates[self.which_particle as usize].data {
+                tweight += p.weight;
             }
             assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         }
         tweight = 0.0;
-        for i in 0..self.nparticles {
-            self.pstates[self.which_particle as usize].data[i]
-                .state
-                .update_state(dt, 1);
-            let gp = self
-                .gps
-                .gps_prob(&self.pstates[self.which_particle as usize].data[i].state);
-            let ip = self.imu.imu_prob(
-                &self.pstates[self.which_particle as usize].data[i].state,
-                dt,
-            );
-            let w = gp * ip * self.pstates[self.which_particle as usize].data[i].weight;
+        for (i, p) in self.pstates[self.which_particle as usize]
+            .data
+            .iter_mut()
+            .enumerate()
+        {
+            p.state.update_state(dt, 1);
+            let gp = self.gps.gps_prob(&p.state);
+            let ip = self.imu.imu_prob(&p.state, dt);
+            let w = gp * ip * p.weight;
             #[cfg(feature = "debug")]
             {
                 if i == 0 {
@@ -361,23 +358,23 @@ impl BpfState {
                     );
                 }
             }
-            self.pstates[self.which_particle as usize].data[i].weight = w;
+            p.weight = w;
             tweight += w;
         }
         #[cfg(feature = "debug")]
         assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         let invtweight = 1.0 / tweight;
-        for i in 0..self.nparticles {
-            self.pstates[self.which_particle as usize].data[i].weight *= invtweight;
+        for p in self.pstates[self.which_particle as usize].data.iter_mut() {
+            p.weight *= invtweight;
         }
         est_state.posn.x = 0.0;
         est_state.posn.y = 0.0;
         est_state.vel.r = 0.0;
         est_state.vel.t = 0.0;
         if !self.best_particle {
-            for i in 0..self.nparticles {
-                let s = &self.pstates[self.which_particle as usize].data[i].state;
-                let w = self.pstates[self.which_particle as usize].data[i].weight;
+            for p in self.pstates[self.which_particle as usize].data.iter() {
+                let s = &p.state;
+                let w = p.weight;
                 est_state.posn.x += w * s.posn.x;
                 est_state.posn.y += w * s.posn.y;
                 est_state.vel.r += w * s.vel.r;
@@ -391,16 +388,10 @@ impl BpfState {
                 .create(true)
                 .open(filename)
                 .unwrap_or_else(|_| panic!("Could not open file at benchtmp/particles-{}.dat", t));
-            for i in 0..self.nparticles {
-                let px = self.pstates[self.which_particle as usize].data[i]
-                    .state
-                    .posn
-                    .x;
-                let py = self.pstates[self.which_particle as usize].data[i]
-                    .state
-                    .posn
-                    .y;
-                let w = self.pstates[self.which_particle as usize].data[i].weight;
+            for p in self.pstates[self.which_particle as usize].data.iter() {
+                let px = p.state.posn.x;
+                let py = p.state.posn.y;
+                let w = p.weight;
                 if let Err(e) = writeln!(file, "{} {} {}", GPoint(px), GPoint(py), GPoint(w)) {
                     eprintln!("Could not write to benchtmp/particles-{}.dat: {}", t, e)
                 }
@@ -419,9 +410,8 @@ impl BpfState {
             );
             self.pstates[!self.which_particle as usize] = new_particle.clone();
             self.which_particle = !self.which_particle;
-            for i in 0..self.nparticles {
-                self.pstates[self.which_particle as usize].data[i].weight =
-                    1.0 / self.nparticles as f64;
+            for p in self.pstates[self.which_particle as usize].data.iter_mut() {
+                p.weight = 1.0 / self.nparticles as f64;
             }
         }
         {
@@ -432,16 +422,21 @@ impl BpfState {
             {
                 worst = 0;
             }
-            for i in 1..self.nparticles {
-                if self.pstates[self.which_particle as usize].data[i].weight > best_weight {
+            for (i, p) in self.pstates[self.which_particle as usize]
+                .data
+                .iter()
+                .enumerate()
+                .skip(1)
+            {
+                if p.weight > best_weight {
                     best = i;
-                    best_weight = self.pstates[self.which_particle as usize].data[i].weight;
-                } else if self.pstates[self.which_particle as usize].data[i].weight < worst_weight {
+                    best_weight = p.weight;
+                } else if p.weight < worst_weight {
                     #[cfg(feature = "diagnostic-print")]
                     {
                         worst = i;
                     }
-                    worst_weight = self.pstates[self.which_particle as usize].data[i].weight;
+                    worst_weight = p.weight;
                 }
             }
         }
