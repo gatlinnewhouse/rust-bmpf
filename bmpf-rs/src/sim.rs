@@ -1,18 +1,20 @@
 use std::f64::consts::PI;
 
-const TWO_PI: f64 = 2.0f64 * PI;
+pub const BOX_DIM: f64 = 20.0;
+pub const MAX_SPEED: f64 = 2.0;
 
-pub static BOX_DIM: f64 = 20.0;
-pub static MAX_SPEED: f64 = 2.0;
+pub const AVAR: f64 = PI / 32.0;
+pub const RVAR: f64 = 0.1;
+pub static mut GPS_VAR: f64 = 1.0;
+pub const IMU_R_VAR: f64 = 0.5;
+pub const IMU_A_VAR: f64 = PI / 8.0;
+pub const NDIRNS: i32 = 1024;
 
-pub static AVAR: f64 = PI / 32f64;
-pub static RVAR: f64 = 0.1f64;
-pub static mut GPS_VAR: f64 = 1.0f64;
-pub static IMU_R_VAR: f64 = 0.5f64;
-pub static IMU_A_VAR: f64 = PI / 8.0f64;
-pub static NDIRNS: i32 = 1024;
+pub const FAST_DIRECTION: i32 = 0;
 
-pub static FAST_DIRECTION: i32 = 0;
+pub const TWO_PI: f64 = 2.0 * PI;
+pub const PI_OVER_TWO: f64 = PI / 2.0;
+pub const NEG_BOX_DIM: f64 = -BOX_DIM;
 
 #[derive(Clone, Copy)]
 pub struct CosDirn {
@@ -58,7 +60,7 @@ pub fn clip(x: f64, low: f64, high: f64) -> f64 {
 
 #[inline]
 pub fn clip_box(x: f64) -> f64 {
-    clip(x, -BOX_DIM, BOX_DIM)
+    clip(x, NEG_BOX_DIM, BOX_DIM)
 }
 
 #[inline]

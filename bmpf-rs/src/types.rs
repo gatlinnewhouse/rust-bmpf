@@ -3,12 +3,13 @@ use crate::{
     resample::{Resample, Resampler},
     sim::{
         AVAR, BOX_DIM, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS,
-        RVAR, angle_dirn, clip_box, clip_speed, normalize_angle, normalize_dirn,
+        NEG_BOX_DIM, PI_OVER_TWO, RVAR, TWO_PI, angle_dirn, clip_box, clip_speed, normalize_angle,
+        normalize_dirn,
     },
     uniform,
 };
 use gpoint::GPoint;
-use std::{cmp::Ordering, f64::consts::PI, fs::OpenOptions, io::Write};
+use std::{cmp::Ordering, f64::consts::PI, fmt::Write, fs::OpenOptions, io::BufWriter};
 
 #[derive(Default, Clone, Copy)]
 pub struct CCoord {
@@ -30,10 +31,11 @@ impl CCoord {
         result
     }
 
+    #[inline]
     fn gps_prob(&self, state: &VehicleState) -> f64 {
-        if state.posn.x < -BOX_DIM
+        if state.posn.x < NEG_BOX_DIM
             || state.posn.x > BOX_DIM
-            || state.posn.y < -BOX_DIM
+            || state.posn.y < NEG_BOX_DIM
             || state.posn.y > BOX_DIM
         {
             return 0.0;
@@ -62,6 +64,7 @@ impl ACoord {
         result
     }
 
+    #[inline]
     fn imu_prob(&self, state: &VehicleState, inv_dt: f64) -> f64 {
         if state.vel.r < 0.0 || state.vel.r > MAX_SPEED {
             return 0.0;
@@ -69,7 +72,7 @@ impl ACoord {
         let pr = gprob(state.vel.r - self.r, IMU_R_VAR * inv_dt);
         let dth = (state.vel.t - self.t)
             .abs()
-            .min(((state.vel.t - self.t).abs() - 2.0 * PI).abs());
+            .min(((state.vel.t - self.t).abs() - TWO_PI).abs());
         let pt = gprob(dth, IMU_A_VAR * inv_dt);
         pr * pt
     }
@@ -151,7 +154,7 @@ impl VehicleState {
         self.posn.x = (uniform() * 2.0 - 1.0) * BOX_DIM;
         self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
         self.vel.r = uniform();
-        self.vel.t = normalize_angle(uniform() * (PI / 2.0f64));
+        self.vel.t = normalize_angle(uniform() * (PI_OVER_TWO));
         self.cos_dirn.init_dirn();
     }
 
@@ -170,7 +173,7 @@ impl VehicleState {
                     b = self.bounce(r0, t0, dt, 0);
                 }
                 BounceProblem::BounceY => {
-                    t0 = normalize_angle(2.0 * PI - t0);
+                    t0 = normalize_angle(TWO_PI - t0);
                     b = self.bounce(r0, t0, dt, 0);
                 }
                 BounceProblem::BounceXY => {
@@ -239,6 +242,7 @@ pub struct BpfState {
     pub vehicle: CCoord,
     gps: CCoord,
     imu: ACoord,
+    filename_buf: String,
 }
 
 impl Default for BpfState {
@@ -256,6 +260,7 @@ impl Default for BpfState {
             vehicle: CCoord::default(),
             gps: CCoord::default(),
             imu: ACoord::default(),
+            filename_buf: String::with_capacity(64),
         }
     }
 }
@@ -282,6 +287,7 @@ impl BpfState {
             vehicle: CCoord::default(),
             gps: CCoord::default(),
             imu: ACoord::default(),
+            filename_buf: String::with_capacity(64),
         }
     }
 
@@ -295,29 +301,44 @@ impl BpfState {
     }
 
     pub fn parse_line(&mut self, line: String) -> i32 {
-        let measures = line.split(" ").collect::<Vec<&str>>();
-        self.vehicle.x = measures[1]
-            .parse::<f64>()
+        let mut parts = line.split(' ');
+        let t_ms: i32 = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
+            .expect("Failed to parse t_ms");
+        self.vehicle.x = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse vehicle x to f64");
-        self.vehicle.y = measures[2]
-            .parse::<f64>()
+        self.vehicle.y = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse vehicle y to f64");
-        self.gps.x = measures[3]
-            .parse::<f64>()
+        self.gps.x = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse gps x to f64");
-        self.gps.y = measures[4]
-            .parse::<f64>()
+        self.gps.y = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse gps y to f64");
-        self.imu.r = measures[5]
-            .parse::<f64>()
+        self.imu.r = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse imu r to f64");
-        self.imu.t = measures[6]
-            .parse::<f64>()
+        self.imu.t = parts
+            .next()
+            .expect("Failed to get next split in parse_line")
+            .parse()
             .expect("Failed to parse imu t to f64");
 
-        measures[0]
-            .parse::<i32>()
-            .expect("Failed to parse t_ms return value to i32")
+        t_ms
     }
 
     pub fn bpf_step(&mut self, t: f64, dt: f64, report: bool) {
@@ -385,23 +406,26 @@ impl BpfState {
             }
         }
         if report {
-            let filename = format!("benchtmp/particles-{}.dat", t);
-            let mut file = OpenOptions::new()
+            self.filename_buf.clear();
+            if let Err(e) = write!(&mut self.filename_buf, "benchtmp/particles-{}.dat", t) {
+                eprintln!("Could not write to filename_buf {}", e)
+            }
+            let file = OpenOptions::new()
                 .append(true)
                 .create(true)
-                .open(filename)
+                .open(&self.filename_buf)
                 .unwrap_or_else(|_| panic!("Could not open file at benchtmp/particles-{}.dat", t));
-            for i in 0..self.nparticles {
-                let px = self.pstates[self.which_particle as usize].data[i]
-                    .state
-                    .posn
-                    .x;
-                let py = self.pstates[self.which_particle as usize].data[i]
-                    .state
-                    .posn
-                    .y;
-                let w = self.pstates[self.which_particle as usize].data[i].weight;
-                if let Err(e) = writeln!(file, "{} {} {}", GPoint(px), GPoint(py), GPoint(w)) {
+            let mut writer = BufWriter::new(file);
+            for particle in self.pstates[self.which_particle as usize].data.iter() {
+                use std::io::Write;
+
+                if let Err(e) = writeln!(
+                    writer,
+                    "{} {} {}",
+                    GPoint(particle.state.posn.x),
+                    GPoint(particle.state.posn.y),
+                    GPoint(particle.weight)
+                ) {
                     eprintln!("Could not write to benchtmp/particles-{}.dat: {}", t, e)
                 }
             }
