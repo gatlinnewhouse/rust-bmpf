@@ -1,4 +1,4 @@
-use bmpf_rs::{sim::DEFAULT_GPS_VAR, types::VehicleState};
+use bmpf_rs::{consts::DEFAULT_GPS_VAR, vehiclestate::VehicleState};
 use gpoint::GPoint;
 use ziggurat_rs::Ziggurat;
 

@@ -1,4 +1,4 @@
-use bmpf_rs::types::BpfState;
+use bmpf_rs::bpfstate::BpfState;
 use clap::Parser;
 use gpoint::GPoint;
 use std::{

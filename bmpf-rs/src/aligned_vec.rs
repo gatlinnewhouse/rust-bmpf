@@ -37,7 +37,7 @@ fn detect_optimal_alignment() -> usize {
         if is_x86_feature_detected!("avx") {
             return 32; // AVX: 256 bits = 32 bytes
         }
-        return 16; // SSE: 128 bits = 16 bytes
+        16 // SSE: 128 bits = 16 bytes
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -191,7 +191,7 @@ impl<T: Copy + Default> AVec<T> {
         // Calculate capacity rounded up to alignment boundary
         let elems_per_align = if elem_size > 0 { align / elem_size } else { 1 };
         let cap = if elems_per_align > 1 {
-            (size + elems_per_align - 1) / elems_per_align * elems_per_align
+            size.div_ceil(elems_per_align) * elems_per_align
         } else {
             size
         };
@@ -475,4 +475,3 @@ mod tests {
         assert_eq!(v[2], 6.0);
     }
 }
-
