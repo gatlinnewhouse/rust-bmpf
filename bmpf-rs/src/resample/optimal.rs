@@ -1,4 +1,4 @@
-use crate::resample::Resample;
+use crate::{resample::Resample, types::Particles};
 use ziggurat_rs::Ziggurat;
 
 #[derive(Default)]
@@ -17,9 +17,9 @@ impl Resample for Optimal {
         &mut self,
         scale: f64,
         m: usize,
-        particle: &mut crate::types::Particles,
+        particle: &mut Particles,
         n: usize,
-        new_particle: &mut crate::types::Particles,
+        new_particle: &mut Particles,
         sort: bool,
         rng: &mut Ziggurat,
     ) -> usize {
@@ -29,27 +29,31 @@ impl Resample for Optimal {
         let mut t = 0f64;
         let mut best_w = 0f64;
         let mut best_i = 0usize;
+
         for i in 0..n {
-            while t + particle.data[j].weight < u0 && j < m {
-                t += particle.data[j].weight;
+            while t + particle.weight[j] < u0 && j < m {
+                t += particle.weight[j];
                 j += 1;
             }
+
             #[cfg(feature = "debug-optimal")]
             if j >= m {
                 use std::process::abort;
-
-                println!("fell of end s={:.14} t ={:.14} u={:.14}", scale, t, u0);
+                println!("fell off end s={:.14} t={:.14} u={:.14}", scale, t, u0);
                 abort();
             }
 
-            new_particle.data[i] = particle.data[j];
-            new_particle.data[i].weight *= invscale;
-            if new_particle.data[i].weight > best_w {
-                best_w = new_particle.data[i].weight;
+            new_particle.copy_from(i, particle, j);
+            new_particle.weight[i] *= invscale;
+
+            if new_particle.weight[i] > best_w {
+                best_w = new_particle.weight[i];
                 best_i = i;
             }
+
             u0 = u0 + (scale - u0) * nform((n - i - 1) as i32, sort, rng);
         }
+
         best_i
     }
 }

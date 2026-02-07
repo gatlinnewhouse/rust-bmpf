@@ -1,10 +1,10 @@
-use bmpf_rs::{sim::DEFAULT_GPS_VAR, types::State};
+use bmpf_rs::{sim::DEFAULT_GPS_VAR, types::VehicleState};
 use gpoint::GPoint;
 use ziggurat_rs::Ziggurat;
 
 #[derive(Default)]
-struct VehicleState {
-    vehicle: State,
+struct Simulation {
+    vehicle: VehicleState,
     rng: Ziggurat,
 }
 
@@ -12,7 +12,7 @@ fn run() {
     let mut t = 0.0f64;
     let dt = 0.01f64;
 
-    let mut s = VehicleState::default();
+    let mut s = Simulation::default();
     s.vehicle.init_state(&mut s.rng);
 
     while t <= 10.0f64 {

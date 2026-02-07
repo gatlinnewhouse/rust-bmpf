@@ -1,25 +1,18 @@
-use crate::{
-    resample::Resample,
-    types::{ParticleInfo, Particles},
-};
+use crate::{resample::Resample, types::Particles};
 use std::process::abort;
 use ziggurat_rs::Ziggurat;
 
 #[derive(Default)]
 pub struct Naive {}
 
-fn weighted_sample<'a>(
-    scale: f64,
-    m: usize,
-    particles: &'a Particles,
-    rng: &'a mut Ziggurat,
-) -> &'a ParticleInfo {
+/// Returns the index of a weighted-sampled particle
+fn weighted_sample_index(scale: f64, m: usize, particles: &Particles, rng: &mut Ziggurat) -> usize {
     let w = rng.uniform() * scale;
     let mut t = 0f64;
     for i in 0..m {
-        t += particles.data[i].weight;
+        t += particles.weight[i];
         if t >= w {
-            return &particles.data[i];
+            return i;
         }
     }
     #[cfg(feature = "debug-naive")]
@@ -41,17 +34,21 @@ impl Resample for Naive {
         let mut best_w = 0f64;
         let mut best_i = 0usize;
         let invscale = 1.0 / scale;
+
         if sort {
-            particle.data.sort_by(|a, b| a.cmp_weight(b));
+            particle.sort_by_weight();
         }
+
         for i in 0..n {
-            new_particle.data[i] = *weighted_sample(scale, m, particle, rng);
-            new_particle.data[i].weight *= invscale;
-            if new_particle.data[i].weight > best_w {
-                best_w = new_particle.data[i].weight;
+            let src = weighted_sample_index(scale, m, particle, rng);
+            new_particle.copy_from(i, particle, src);
+            new_particle.weight[i] *= invscale;
+            if new_particle.weight[i] > best_w {
+                best_w = new_particle.weight[i];
                 best_i = i;
             }
         }
         best_i
     }
 }
+

@@ -205,3 +205,6 @@ dependencies = [
 [[package]]
 name = "ziggurat-rs"
 version = "0.1.0"
+dependencies = [
+ "gpoint",
+]

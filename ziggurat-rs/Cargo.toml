@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# gpoint = "0.2"
+gpoint = "0.2"
 
 # [build-dependencies]
 # gpoint = "0.2"

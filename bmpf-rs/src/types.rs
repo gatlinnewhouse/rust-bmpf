@@ -1,4 +1,5 @@
 use crate::{
+    aligned_vec::AVec,
     resample::{Resample, Resampler},
     sim::{
         AVAR, BOX_DIM, COS_DIRN, DEFAULT_GPS_VAR, FAST_DIRECTION, IMU_A_VAR, IMU_R_VAR, MAX_SPEED,
@@ -17,35 +18,6 @@ pub struct CCoord {
     pub y: f64,
 }
 
-fn gprob(delta: f64, sd: f64) -> f64 {
-    let inv_sd = 1.0 / sd;
-    let scaled = delta * inv_sd;
-    (-0.5 * scaled * scaled).exp()
-}
-
-impl CCoord {
-    fn gps_measure(&self, rng: &mut Ziggurat, gps_var: f64) -> CCoord {
-        let mut result = *self;
-        result.x += rng.gaussian(gps_var);
-        result.y += rng.gaussian(gps_var);
-        result
-    }
-
-    #[inline]
-    fn gps_prob(&self, state: &State, gps_var: f64) -> f64 {
-        if state.posn.x < NEG_BOX_DIM
-            || state.posn.x > BOX_DIM
-            || state.posn.y < NEG_BOX_DIM
-            || state.posn.y > BOX_DIM
-        {
-            return 0.0;
-        }
-        let px = gprob(state.posn.x - self.x, gps_var);
-        let py = gprob(state.posn.y - self.y, gps_var);
-        px * py
-    }
-}
-
 #[derive(Default, Clone, Copy)]
 #[repr(C)]
 pub struct ACoord {
@@ -53,27 +25,77 @@ pub struct ACoord {
     pub t: f64,
 }
 
-impl ACoord {
-    fn measure(&self, dt: f64, rng: &mut Ziggurat) -> ACoord {
-        let mut result = *self;
-        result.r += rng.gaussian(IMU_R_VAR * dt);
-        result.t = normalize_angle(result.t + rng.gaussian(IMU_A_VAR * dt));
-        if result.r < 0.0 {
-            result.r = -result.r;
-            result.t = normalize_angle(result.t + PI);
+#[derive(Clone, Copy)]
+pub struct PosnRef<'a> {
+    pub x: &'a f64,
+    pub y: &'a f64,
+}
+
+#[derive(Clone, Copy)]
+pub struct VelRef<'a> {
+    pub r: &'a f64,
+    pub t: &'a f64,
+}
+
+#[derive(Clone, Copy)]
+pub struct ParticleRef<'a> {
+    pub posn_x: &'a f64,
+    pub posn_y: &'a f64,
+    pub vel_r: &'a f64,
+    pub vel_t: &'a f64,
+    pub weight: &'a f64,
+}
+
+#[inline]
+fn gprob(delta: f64, sd: f64) -> f64 {
+    let inv_sd = 1.0 / sd;
+    let scaled = delta * inv_sd;
+    (-0.5 * scaled * scaled).exp()
+}
+
+impl CCoord {
+    pub fn gps_measure(&self, rng: &mut Ziggurat, gps_var: f64) -> CCoord {
+        CCoord {
+            x: self.x + rng.gaussian(gps_var),
+            y: self.y + rng.gaussian(gps_var),
         }
-        result
     }
 
     #[inline]
-    fn imu_prob(&self, state: &State, inv_dt: f64) -> f64 {
-        if state.vel.r < 0.0 || state.vel.r > MAX_SPEED {
+    pub fn gps_prob(&self, particles: &Particles, i: usize, gps_var: f64) -> f64 {
+        let px = particles.posn_x[i];
+        let py = particles.posn_y[i];
+
+        if px < NEG_BOX_DIM || px > BOX_DIM || py < NEG_BOX_DIM || py > BOX_DIM {
             return 0.0;
         }
-        let pr = gprob(state.vel.r - self.r, IMU_R_VAR * inv_dt);
-        let dth = (state.vel.t - self.t)
+        gprob(px - self.x, gps_var) * gprob(py - self.y, gps_var)
+    }
+}
+
+impl ACoord {
+    pub fn measure(&self, dt: f64, rng: &mut Ziggurat) -> ACoord {
+        let mut r = self.r + rng.gaussian(IMU_R_VAR * dt);
+        let mut t = normalize_angle(self.t + rng.gaussian(IMU_A_VAR * dt));
+        if r < 0.0 {
+            r = -r;
+            t = normalize_angle(t + PI);
+        }
+        ACoord { r, t }
+    }
+
+    #[inline]
+    pub fn imu_prob(&self, particles: &Particles, i: usize, inv_dt: f64) -> f64 {
+        let vr = particles.vel_r[i];
+        let vt = particles.vel_t[i];
+
+        if vr < 0.0 || vr > MAX_SPEED {
+            return 0.0;
+        }
+        let pr = gprob(vr - self.r, IMU_R_VAR * inv_dt);
+        let dth = (vt - self.t)
             .abs()
-            .min(((state.vel.t - self.t).abs() - TWO_PI).abs());
+            .min(((vt - self.t).abs() - TWO_PI).abs());
         let pt = gprob(dth, IMU_A_VAR * inv_dt);
         pr * pt
     }
@@ -87,14 +109,248 @@ enum BounceProblem {
     BounceXY,
 }
 
-#[derive(Clone, Default, Copy)]
-#[repr(C)]
-pub struct State {
-    pub posn: CCoord,
-    vel: ACoord,
+#[derive(Clone)]
+pub struct Particles {
+    // Position
+    pub posn_x: AVec<f64>,
+    pub posn_y: AVec<f64>,
+    // Velocity
+    pub vel_r: AVec<f64>,
+    pub vel_t: AVec<f64>,
+    // Weight
+    pub weight: AVec<f64>,
 }
 
-impl State {
+impl Default for Particles {
+    fn default() -> Self {
+        Self::new(100)
+    }
+}
+
+impl Particles {
+    pub fn new(nparticles: usize) -> Self {
+        Self {
+            posn_x: AVec::new(nparticles),
+            posn_y: AVec::new(nparticles),
+            vel_r: AVec::new(nparticles),
+            vel_t: AVec::new(nparticles),
+            weight: AVec::new(nparticles),
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.weight.len()
+    }
+
+    #[inline]
+    pub fn get(&self, i: usize) -> ParticleRef<'_> {
+        ParticleRef {
+            posn_x: &self.posn_x[i],
+            posn_y: &self.posn_y[i],
+            vel_r: &self.vel_r[i],
+            vel_t: &self.vel_t[i],
+            weight: &self.weight[i],
+        }
+    }
+
+    #[inline]
+    pub fn posn(&self, i: usize) -> PosnRef<'_> {
+        PosnRef {
+            x: &self.posn_x[i],
+            y: &self.posn_y[i],
+        }
+    }
+
+    #[inline]
+    pub fn vel(&self, i: usize) -> VelRef<'_> {
+        VelRef {
+            r: &self.vel_r[i],
+            t: &self.vel_t[i],
+        }
+    }
+
+    #[inline]
+    pub fn copy_within(&mut self, dst: usize, src: usize) {
+        self.posn_x[dst] = self.posn_x[src];
+        self.posn_y[dst] = self.posn_y[src];
+        self.vel_r[dst] = self.vel_r[src];
+        self.vel_t[dst] = self.vel_t[src];
+        self.weight[dst] = self.weight[src];
+    }
+
+    #[inline]
+    pub fn copy_from(&mut self, dst: usize, other: &Particles, src: usize) {
+        self.posn_x[dst] = other.posn_x[src];
+        self.posn_y[dst] = other.posn_y[src];
+        self.vel_r[dst] = other.vel_r[src];
+        self.vel_t[dst] = other.vel_t[src];
+        self.weight[dst] = other.weight[src];
+    }
+
+    #[inline]
+    pub fn swap(&mut self, i: usize, j: usize) {
+        self.posn_x.swap(i, j);
+        self.posn_y.swap(i, j);
+        self.vel_r.swap(i, j);
+        self.vel_t.swap(i, j);
+        self.weight.swap(i, j);
+    }
+
+    #[inline]
+    pub fn cmp_weight(&self, a: usize, b: usize) -> Ordering {
+        self.weight[b]
+            .partial_cmp(&self.weight[a])
+            .unwrap_or(Ordering::Equal)
+    }
+
+    pub fn sort_by_weight(&mut self) {
+        let n = self.len();
+        if n <= 1 {
+            return;
+        }
+
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.sort_by(|&a, &b| self.cmp_weight(a, b));
+
+        let mut visited = vec![false; n];
+
+        for start in 0..n {
+            if visited[start] || indices[start] == start {
+                visited[start] = true;
+                continue;
+            }
+
+            let mut current = start;
+
+            let tmp_px = self.posn_x[start];
+            let tmp_py = self.posn_y[start];
+            let tmp_vr = self.vel_r[start];
+            let tmp_vt = self.vel_t[start];
+            let tmp_w = self.weight[start];
+
+            loop {
+                let next = indices[current];
+                visited[current] = true;
+
+                if next == start {
+                    self.posn_x[current] = tmp_px;
+                    self.posn_y[current] = tmp_py;
+                    self.vel_r[current] = tmp_vr;
+                    self.vel_t[current] = tmp_vt;
+                    self.weight[current] = tmp_w;
+                    break;
+                }
+
+                self.posn_x[current] = self.posn_x[next];
+                self.posn_y[current] = self.posn_y[next];
+                self.vel_r[current] = self.vel_r[next];
+                self.vel_t[current] = self.vel_t[next];
+                self.weight[current] = self.weight[next];
+
+                current = next;
+            }
+        }
+    }
+
+    pub fn init_particle_state(&mut self, i: usize, rng: &mut Ziggurat) {
+        self.posn_x[i] = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.posn_y[i] = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.vel_r[i] = rng.uniform();
+        self.vel_t[i] = normalize_angle(rng.uniform() * PI_OVER_TWO);
+    }
+
+    pub fn update_particle_state(&mut self, i: usize, dt: f64, noise: i32, rng: &mut Ziggurat) {
+        let mut r0 = clip_speed(self.vel_r[i] + rng.gaussian(RVAR) * ((1 + 8 * noise) as f64));
+        let mut t0 = normalize_angle(self.vel_t[i] + rng.gaussian(AVAR) * ((1 + 8 * noise) as f64));
+        let mut b = self.bounce(i, r0, t0, dt, noise);
+
+        if b != BounceProblem::BounceOk {
+            r0 = self.vel_r[i];
+            t0 = self.vel_t[i];
+            b = self.bounce(i, r0, t0, dt, 0);
+            match b {
+                BounceProblem::BounceOk => (),
+                BounceProblem::BounceX => {
+                    t0 = normalize_angle(PI - t0);
+                    b = self.bounce(i, r0, t0, dt, 0);
+                }
+                BounceProblem::BounceY => {
+                    t0 = normalize_angle(TWO_PI - t0);
+                    b = self.bounce(i, r0, t0, dt, 0);
+                }
+                BounceProblem::BounceXY => {
+                    t0 = normalize_angle(PI + t0);
+                    b = self.bounce(i, r0, t0, dt, 0);
+                }
+            }
+        }
+        assert!(b == BounceProblem::BounceOk, "{:?} != BounceOk", b);
+    }
+
+    fn bounce(&mut self, i: usize, r: f64, t: f64, dt: f64, _noise: i32) -> BounceProblem {
+        let mut x0;
+        let mut y0;
+
+        if FAST_DIRECTION == 1 {
+            let dc0 = angle_dirn(t);
+            let dms0 = normalize_dirn(dc0 + NDIRNS / 4);
+            x0 = self.posn_x[i] + r * COS_DIRN.data[dc0 as usize] * dt;
+            y0 = self.posn_y[i] + r * COS_DIRN.data[dms0 as usize] * dt;
+        } else {
+            x0 = self.posn_x[i] + r * t.cos() * dt;
+            y0 = self.posn_y[i] - r * t.sin() * dt;
+        }
+
+        let mut x1 = clip_box(x0);
+        let mut y1 = clip_box(y0);
+
+        if x0 == x1 && y0 == y1 {
+            self.posn_x[i] = x1;
+            self.posn_y[i] = y1;
+            self.vel_t[i] = t;
+            self.vel_r[i] = r;
+            return BounceProblem::BounceOk;
+        }
+
+        if FAST_DIRECTION == 1 {
+            x0 = self.posn_x[i] + r * t.cos() * dt;
+            y0 = self.posn_y[i] - r * t.sin() * dt;
+            x1 = clip_box(x0);
+            y1 = clip_box(y0);
+            if x0 == x1 && y0 == y1 {
+                self.posn_x[i] = x1;
+                self.posn_y[i] = y1;
+                self.vel_t[i] = t;
+                self.vel_r[i] = r;
+                return BounceProblem::BounceOk;
+            }
+        }
+
+        if y0 == y1 {
+            BounceProblem::BounceX
+        } else if x0 == x1 {
+            BounceProblem::BounceY
+        } else {
+            BounceProblem::BounceXY
+        }
+    }
+}
+
+// ============================================================================
+// Single vehicle state (for ground truth simulation in examples)
+// ============================================================================
+
+/// Single vehicle state for ground truth simulation
+/// This is separate from the SoA Particles structure which is for the particle filter
+#[derive(Clone, Default, Copy)]
+#[repr(C)]
+pub struct VehicleState {
+    pub posn: CCoord,
+    pub vel: ACoord,
+}
+
+impl VehicleState {
     #[inline]
     pub fn gps_measure(&self, rng: &mut Ziggurat, gps_var: f64) -> CCoord {
         self.posn.gps_measure(rng, gps_var)
@@ -105,63 +361,18 @@ impl State {
         self.vel.measure(dt, rng)
     }
 
-    fn bounce(&mut self, r: f64, t: f64, dt: f64, _noise: i32) -> BounceProblem {
-        let dc0;
-        let dms0;
-        let mut x0;
-        let mut y0;
-        let mut x1;
-        let mut y1;
-        if FAST_DIRECTION == 1 {
-            dc0 = angle_dirn(t);
-            dms0 = normalize_dirn(dc0 + NDIRNS / 4);
-            x0 = self.posn.x + r * COS_DIRN.data[dc0 as usize] * dt;
-            y0 = self.posn.y + r * COS_DIRN.data[dms0 as usize] * dt;
-        } else {
-            x0 = self.posn.x + r * t.cos() * dt;
-            y0 = self.posn.y - r * t.sin() * dt;
-        }
-        x1 = clip_box(x0);
-        y1 = clip_box(y0);
-        if x0 == x1 && y0 == y1 {
-            self.posn.x = x1;
-            self.posn.y = y1;
-            self.vel.t = t;
-            self.vel.r = r;
-            return BounceProblem::BounceOk;
-        }
-        if FAST_DIRECTION == 1 {
-            x0 = self.posn.x + r * t.cos() * dt;
-            y0 = self.posn.y - r * t.sin() * dt;
-            x1 = clip_box(x0);
-            y1 = clip_box(y0);
-            if x0 == x1 && y0 == y1 {
-                self.posn.x = x1;
-                self.posn.y = y1;
-                self.vel.t = t;
-                self.vel.r = r;
-                return BounceProblem::BounceOk;
-            }
-        }
-        if y0 == y1 {
-            return BounceProblem::BounceX;
-        } else if x0 == x1 {
-            return BounceProblem::BounceY;
-        }
-        BounceProblem::BounceXY
-    }
-
     pub fn init_state(&mut self, rng: &mut Ziggurat) {
         self.posn.x = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
         self.posn.y = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
         self.vel.r = rng.uniform();
-        self.vel.t = normalize_angle(rng.uniform() * (PI_OVER_TWO));
+        self.vel.t = normalize_angle(rng.uniform() * PI_OVER_TWO);
     }
 
     pub fn update_state(&mut self, dt: f64, noise: i32, rng: &mut Ziggurat) {
         let mut r0 = clip_speed(self.vel.r + rng.gaussian(RVAR) * ((1 + 8 * noise) as f64));
         let mut t0 = normalize_angle(self.vel.t + rng.gaussian(AVAR) * ((1 + 8 * noise) as f64));
         let mut b = self.bounce(r0, t0, dt, noise);
+
         if b != BounceProblem::BounceOk {
             r0 = self.vel.r;
             t0 = self.vel.t;
@@ -178,54 +389,58 @@ impl State {
                 }
                 BounceProblem::BounceXY => {
                     t0 = normalize_angle(PI + t0);
-                    b = self.bounce(r0, t0, dt, 0)
+                    b = self.bounce(r0, t0, dt, 0);
                 }
             }
         }
-        assert!(b == BounceProblem::BounceOk, "{:?} != BounceOk", b)
+        assert!(b == BounceProblem::BounceOk, "{:?} != BounceOk", b);
     }
-}
 
-#[derive(Default, Clone, Copy)]
-#[repr(C)]
-pub struct ParticleInfo {
-    pub state: State,
-    pub weight: f64,
-}
+    fn bounce(&mut self, r: f64, t: f64, dt: f64, _noise: i32) -> BounceProblem {
+        let mut x0;
+        let mut y0;
 
-#[inline]
-fn sgn(x: f64) -> Ordering {
-    if x < 0.0 {
-        return Ordering::Less;
-    } else if x > 0.0 {
-        return Ordering::Greater;
-    }
-    Ordering::Equal
-}
-
-impl ParticleInfo {
-    pub fn cmp_weight(&self, other: &Self) -> std::cmp::Ordering {
-        sgn(self.weight - other.weight).reverse()
-    }
-}
-
-#[derive(Clone)]
-pub struct Particles {
-    pub data: Vec<ParticleInfo>,
-}
-
-impl Default for Particles {
-    fn default() -> Self {
-        Self {
-            data: vec![ParticleInfo::default(); 100],
+        if FAST_DIRECTION == 1 {
+            let dc0 = angle_dirn(t);
+            let dms0 = normalize_dirn(dc0 + NDIRNS / 4);
+            x0 = self.posn.x + r * COS_DIRN.data[dc0 as usize] * dt;
+            y0 = self.posn.y + r * COS_DIRN.data[dms0 as usize] * dt;
+        } else {
+            x0 = self.posn.x + r * t.cos() * dt;
+            y0 = self.posn.y - r * t.sin() * dt;
         }
-    }
-}
 
-impl Particles {
-    fn new(nparticles: usize) -> Self {
-        Self {
-            data: vec![ParticleInfo::default(); nparticles],
+        let mut x1 = clip_box(x0);
+        let mut y1 = clip_box(y0);
+
+        if x0 == x1 && y0 == y1 {
+            self.posn.x = x1;
+            self.posn.y = y1;
+            self.vel.t = t;
+            self.vel.r = r;
+            return BounceProblem::BounceOk;
+        }
+
+        if FAST_DIRECTION == 1 {
+            x0 = self.posn.x + r * t.cos() * dt;
+            y0 = self.posn.y - r * t.sin() * dt;
+            x1 = clip_box(x0);
+            y1 = clip_box(y0);
+            if x0 == x1 && y0 == y1 {
+                self.posn.x = x1;
+                self.posn.y = y1;
+                self.vel.t = t;
+                self.vel.r = r;
+                return BounceProblem::BounceOk;
+            }
+        }
+
+        if y0 == y1 {
+            BounceProblem::BounceX
+        } else if x0 == x1 {
+            BounceProblem::BounceY
+        } else {
+            BounceProblem::BounceXY
         }
     }
 }
@@ -309,9 +524,9 @@ impl BpfState {
 
     pub fn init_particles(&mut self) {
         self.which_particle = false;
-        for particle in &mut self.pstates[0].data {
-            particle.state.init_state(&mut self.rng);
-            particle.weight = self.inv_nparticles;
+        for i in 0..self.nparticles {
+            self.pstates[0].init_particle_state(i, &mut self.rng);
+            self.pstates[0].weight[i] = self.inv_nparticles;
         }
     }
 
@@ -324,35 +539,34 @@ impl BpfState {
             .expect("Failed to parse t_ms");
         self.vehicle.x = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse vehicle x to f64");
+            .expect("Failed to parse vehicle x");
         self.vehicle.y = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse vehicle y to f64");
+            .expect("Failed to parse vehicle y");
         self.gps.x = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse gps x to f64");
+            .expect("Failed to parse gps x");
         self.gps.y = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse gps y to f64");
+            .expect("Failed to parse gps y");
         self.imu.r = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse imu r to f64");
+            .expect("Failed to parse imu r");
         self.imu.t = parts
             .next()
-            .expect("Failed to get next split in parse_line")
+            .unwrap()
             .parse()
-            .expect("Failed to parse imu t to f64");
-
+            .expect("Failed to parse imu t");
         t_ms
     }
 
@@ -363,88 +577,82 @@ impl BpfState {
         let mut worst = 0usize;
         let mut best_weight;
         let mut worst_weight;
-        let mut est_state = State::default();
-        // est_state.init_state();
+
+        let mut est_posn_x = 0.0;
+        let mut est_posn_y = 0.0;
+        let mut est_vel_r = 0.0;
+        let mut est_vel_t = 0.0;
+
+        let which = self.which_particle as usize;
+
         #[cfg(feature = "debug")]
         {
             tweight = 0.0;
             for i in 0..self.nparticles {
-                tweight += self.pstates[self.which_particle as usize].data[i].weight;
+                tweight += self.pstates[which].weight[i];
             }
             assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
         }
+
         tweight = 0.0;
-        for (i, particle) in self.pstates[self.which_particle as usize]
-            .data
-            .iter_mut()
-            .enumerate()
-        {
-            particle.state.update_state(dt, 1, &mut self.rng);
-            let inv_dt = 1.0 / dt;
-            let gp = self.gps.gps_prob(&particle.state, self.gps_var);
-            let ip = self.imu.imu_prob(&particle.state, inv_dt);
-            let w = gp * ip * particle.weight;
+        let inv_dt = 1.0 / dt;
+
+        for i in 0..self.nparticles {
+            self.pstates[which].update_particle_state(i, dt, 1, &mut self.rng);
+            let gp = self.gps.gps_prob(&self.pstates[which], i, self.gps_var);
+            let ip = self.imu.imu_prob(&self.pstates[which], i, inv_dt);
+            let w = gp * ip * self.pstates[which].weight[i];
+
             #[cfg(feature = "debug")]
             {
                 if i == 0 {
                     eprintln!("gp={} ip={} w={}", GPoint(gp), GPoint(ip), GPoint(w));
-                    eprintln!(
-                        "gps=({} {}), imu=(r={}, t={})",
-                        GPoint(self.gps.x),
-                        GPoint(self.gps.y),
-                        GPoint(self.imu.r),
-                        GPoint(self.imu.t)
-                    );
                 }
             }
-            particle.weight = w;
+
+            self.pstates[which].weight[i] = w;
             tweight += w;
         }
+
         #[cfg(feature = "debug")]
         assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
+
         let invtweight = 1.0 / tweight;
         for i in 0..self.nparticles {
-            self.pstates[self.which_particle as usize].data[i].weight *= invtweight;
+            self.pstates[which].weight[i] *= invtweight;
         }
-        est_state.posn.x = 0.0;
-        est_state.posn.y = 0.0;
-        est_state.vel.r = 0.0;
-        est_state.vel.t = 0.0;
+
         if !self.best_particle {
             for i in 0..self.nparticles {
-                let s = &self.pstates[self.which_particle as usize].data[i].state;
-                let w = self.pstates[self.which_particle as usize].data[i].weight;
-                est_state.posn.x += w * s.posn.x;
-                est_state.posn.y += w * s.posn.y;
-                est_state.vel.r += w * s.vel.r;
-                est_state.vel.t = normalize_angle(est_state.vel.t + w * s.vel.t);
+                let w = self.pstates[which].weight[i];
+                est_posn_x += w * self.pstates[which].posn_x[i];
+                est_posn_y += w * self.pstates[which].posn_y[i];
+                est_vel_r += w * self.pstates[which].vel_r[i];
+                est_vel_t = normalize_angle(est_vel_t + w * self.pstates[which].vel_t[i]);
             }
         }
+
         if report {
             self.filename_buf.clear();
-            if let Err(e) = write!(&mut self.filename_buf, "benchtmp/particles-{}.dat", t) {
-                eprintln!("Could not write to filename_buf {}", e)
-            }
+            let _ = write!(&mut self.filename_buf, "benchtmp/particles-{}.dat", t);
             let file = OpenOptions::new()
                 .append(true)
                 .create(true)
                 .open(&self.filename_buf)
-                .unwrap_or_else(|_| panic!("Could not open file at benchtmp/particles-{}.dat", t));
+                .unwrap_or_else(|_| panic!("Could not open file"));
             let mut writer = BufWriter::new(file);
-            for particle in self.pstates[self.which_particle as usize].data.iter() {
+            for i in 0..self.nparticles {
                 use std::io::Write;
-
-                if let Err(e) = writeln!(
+                let _ = writeln!(
                     writer,
                     "{} {} {}",
-                    GPoint(particle.state.posn.x),
-                    GPoint(particle.state.posn.y),
-                    GPoint(particle.weight)
-                ) {
-                    eprintln!("Could not write to benchtmp/particles-{}.dat: {}", t, e)
-                }
+                    GPoint(self.pstates[which].posn_x[i]),
+                    GPoint(self.pstates[which].posn_y[i]),
+                    GPoint(self.pstates[which].weight[i])
+                );
             }
         }
+
         self.resample_count = (self.resample_count + 1) % self.resample_interval;
         if self.resample_count == 0 {
             let [ref mut p0, ref mut p1] = self.pstates;
@@ -463,90 +671,61 @@ impl BpfState {
                 &mut self.rng,
             );
             self.which_particle = !self.which_particle;
-            for particle in self.pstates[self.which_particle as usize].data.iter_mut() {
-                particle.weight = self.inv_nparticles;
+            let which = self.which_particle as usize;
+            for i in 0..self.nparticles {
+                self.pstates[which].weight[i] = self.inv_nparticles;
             }
         }
+
+        let which = self.which_particle as usize;
+        best_weight = self.pstates[which].weight[0];
+        worst_weight = self.pstates[which].weight[0];
+        best = 0;
+        #[cfg(feature = "diagnostic-print")]
         {
-            best_weight = self.pstates[self.which_particle as usize].data[0].weight;
-            worst_weight = self.pstates[self.which_particle as usize].data[0].weight;
-            best = 0;
-            #[cfg(feature = "diagnostic-print")]
-            {
-                worst = 0;
-            }
-            for i in 1..self.nparticles {
-                if self.pstates[self.which_particle as usize].data[i].weight > best_weight {
-                    best = i;
-                    best_weight = self.pstates[self.which_particle as usize].data[i].weight;
-                } else if self.pstates[self.which_particle as usize].data[i].weight < worst_weight {
-                    #[cfg(feature = "diagnostic-print")]
-                    {
-                        worst = i;
-                    }
-                    worst_weight = self.pstates[self.which_particle as usize].data[i].weight;
+            worst = 0;
+        }
+
+        for i in 1..self.nparticles {
+            if self.pstates[which].weight[i] > best_weight {
+                best = i;
+                best_weight = self.pstates[which].weight[i];
+            } else if self.pstates[which].weight[i] < worst_weight {
+                #[cfg(feature = "diagnostic-print")]
+                {
+                    worst = i;
                 }
+                worst_weight = self.pstates[which].weight[i];
             }
         }
+
         #[cfg(feature = "diagnostic-print")]
         {
             print!(
                 "  {} {} {}",
                 GPoint(best_weight),
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[best]
-                        .state
-                        .posn
-                        .x
-                ),
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[best]
-                        .state
-                        .posn
-                        .y
-                ),
+                GPoint(self.pstates[which].posn_x[best]),
+                GPoint(self.pstates[which].posn_y[best]),
             );
             print!(
                 "  {} {} {}",
                 GPoint(worst_weight),
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[worst]
-                        .state
-                        .posn
-                        .x
-                ),
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[worst]
-                        .state
-                        .posn
-                        .y
-                ),
+                GPoint(self.pstates[which].posn_x[worst]),
+                GPoint(self.pstates[which].posn_y[worst]),
             );
         }
+
         #[cfg(not(feature = "diagnostic-print"))]
         {
             print!(
                 "  {} {}",
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[best]
-                        .state
-                        .posn
-                        .x
-                ),
-                GPoint(
-                    self.pstates[self.which_particle as usize].data[best]
-                        .state
-                        .posn
-                        .y
-                )
+                GPoint(self.pstates[which].posn_x[best]),
+                GPoint(self.pstates[which].posn_y[best])
             );
         }
+
         if !self.best_particle {
-            print!(
-                "  {} {}",
-                GPoint(est_state.posn.x),
-                GPoint(est_state.posn.y)
-            );
+            print!("  {} {}", GPoint(est_posn_x), GPoint(est_posn_y));
         }
     }
 }

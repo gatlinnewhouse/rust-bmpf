@@ -19,39 +19,44 @@ impl Resample for Regular {
         let mut best_w = 0f64;
         let mut best_i = 0usize;
 
-        // Shuffle
+        // Shuffle if requested
         if sort {
-            for i in 0..m - 1 {
+            for i in 0..m.saturating_sub(1) {
                 let j = rng.rand32() as usize % (m - i) + i;
-                particle.data.swap(j, i);
+                particle.swap(j, i);
             }
         }
 
-        // Merge
-        let mut u0 = scale / (n + 1) as f64;
+        // Systematic resampling
+        let step = scale / (n + 1) as f64;
+        let mut u0 = step;
         let mut j = 0;
         let mut t = 0f64;
+
         for i in 0..n {
-            while t + particle.data[j].weight < u0 && j < m {
-                t += particle.data[j].weight;
+            while t + particle.weight[j] < u0 && j < m {
+                t += particle.weight[j];
                 j += 1;
             }
+
             #[cfg(feature = "debug-regular")]
             if j >= m {
                 use std::process::abort;
-
-                println!("fell of end s={:.14} t ={:.14} u={:.14}", scale, t, u0);
+                println!("fell off end s={:.14} t={:.14} u={:.14}", scale, t, u0);
                 abort();
             }
 
-            new_particle.data[i] = particle.data[j];
-            new_particle.data[i].weight *= invscale;
-            if new_particle.data[i].weight > best_w {
-                best_w = new_particle.data[i].weight;
+            new_particle.copy_from(i, particle, j);
+            new_particle.weight[i] *= invscale;
+
+            if new_particle.weight[i] > best_w {
+                best_w = new_particle.weight[i];
                 best_i = i;
             }
-            u0 += scale / (n + 1) as f64;
+
+            u0 += step;
         }
+
         best_i
     }
 }

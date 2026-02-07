@@ -37,7 +37,7 @@ impl Resampler {
             "naive" => Self::Naive(naive::Naive::default()),
             "optimal" => Self::Optimal(optimal::Optimal::default()),
             "regular" => Self::Regular(regular::Regular::default()),
-            _ => panic!("No resampler specified"),
+            _ => panic!("Unknown resampler: {}", name),
         }
     }
 }
@@ -54,16 +54,10 @@ impl Resample for Resampler {
         rng: &mut Ziggurat,
     ) -> usize {
         match self {
-            Resampler::Logm(logm) => logm.resample(scale, m, particle, n, new_particle, sort, rng),
-            Resampler::Naive(naive) => {
-                naive.resample(scale, m, particle, n, new_particle, sort, rng)
-            }
-            Resampler::Optimal(optimal) => {
-                optimal.resample(scale, m, particle, n, new_particle, sort, rng)
-            }
-            Resampler::Regular(regular) => {
-                regular.resample(scale, m, particle, n, new_particle, sort, rng)
-            }
+            Resampler::Logm(r) => r.resample(scale, m, particle, n, new_particle, sort, rng),
+            Resampler::Naive(r) => r.resample(scale, m, particle, n, new_particle, sort, rng),
+            Resampler::Optimal(r) => r.resample(scale, m, particle, n, new_particle, sort, rng),
+            Resampler::Regular(r) => r.resample(scale, m, particle, n, new_particle, sort, rng),
         }
     }
 }
