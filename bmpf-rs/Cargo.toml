@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 ziggurat-rs = { path = "../ziggurat-rs" }
 gpoint = "0.2"
+multiversion = "0.8"
+libm = "0.2"
 
 [dev-dependencies]
 clap = { version = "4.5", features = ["derive"] }

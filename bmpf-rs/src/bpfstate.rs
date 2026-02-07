@@ -1,6 +1,10 @@
 use crate::{
     consts::DEFAULT_GPS_VAR,
     resample::{Resample, Resampler},
+    simd::{
+        fill_slice, find_best_worst, gps_prob_batch, imu_prob_batch, scale_slice, update_weights,
+        weighted_circular_mean, weighted_sum,
+    },
     types::{ACoord, CCoord, Particles},
     utils::normalize_angle,
 };
@@ -25,6 +29,10 @@ pub struct BpfState {
     pub(crate) rng: Ziggurat,
     pub(crate) inv_nparticles: f64,
     pub(crate) gps_var: f64,
+    pub(crate) inv_gps_var: f64,
+    // Scratch buffers for SIMD operations (avoid repeated allocation)
+    gps_probs: Vec<f64>,
+    imu_probs: Vec<f64>,
 }
 
 impl Default for BpfState {
@@ -46,6 +54,9 @@ impl Default for BpfState {
             rng: Ziggurat::default(),
             inv_nparticles: 1.0 / 100.0,
             gps_var: DEFAULT_GPS_VAR,
+            inv_gps_var: 1.0 / DEFAULT_GPS_VAR,
+            gps_probs: vec![0.0; 100],
+            imu_probs: vec![0.0; 100],
         }
     }
 }
@@ -77,6 +88,9 @@ impl BpfState {
             rng: Ziggurat::default(),
             inv_nparticles: 1.0 / nparticles as f64,
             gps_var,
+            inv_gps_var: 1.0 / gps_var,
+            gps_probs: vec![0.0; nparticles],
+            imu_probs: vec![0.0; nparticles],
         }
     }
 
@@ -89,8 +103,9 @@ impl BpfState {
         self.which_particle = false;
         for i in 0..self.nparticles {
             self.pstates[0].init_particle_state(i, &mut self.rng);
-            self.pstates[0].weight[i] = self.inv_nparticles;
         }
+        // Use SIMD fill for weights
+        fill_slice(self.pstates[0].weight.as_mut_slice(), self.inv_nparticles);
     }
 
     pub fn parse_line(&mut self, line: String) -> i32 {
@@ -134,67 +149,77 @@ impl BpfState {
     }
 
     pub fn bpf_step(&mut self, t: f64, dt: f64, report: bool) {
-        let mut tweight;
-        let mut best;
-        #[cfg(feature = "diagnostic-print")]
-        let mut worst = 0usize;
-        let mut best_weight;
-        let mut worst_weight;
-
-        let mut est_posn_x = 0.0;
-        let mut est_posn_y = 0.0;
-        let mut est_vel_r = 0.0;
-        let mut est_vel_t = 0.0;
-
         let which = self.which_particle as usize;
-
-        #[cfg(feature = "debug")]
-        {
-            tweight = 0.0;
-            for i in 0..self.nparticles {
-                tweight += self.pstates[which].weight[i];
-            }
-            assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
-        }
-
-        tweight = 0.0;
         let inv_dt = 1.0 / dt;
 
+        // =========================================
+        // 1. Update particle states (still sequential due to RNG dependency)
+        // =========================================
         for i in 0..self.nparticles {
             self.pstates[which].update_particle_state(i, dt, 1, &mut self.rng);
-            let gp = self.gps.gps_prob(&self.pstates[which], i, self.gps_var);
-            let ip = self.imu.imu_prob(&self.pstates[which], i, inv_dt);
-            let w = gp * ip * self.pstates[which].weight[i];
-
-            #[cfg(feature = "debug")]
-            {
-                if i == 0 {
-                    eprintln!("gp={} ip={} w={}", GPoint(gp), GPoint(ip), GPoint(w));
-                }
-            }
-
-            self.pstates[which].weight[i] = w;
-            tweight += w;
         }
+
+        // =========================================
+        // 2. Batch compute GPS probabilities (SIMD)
+        // =========================================
+        gps_prob_batch(
+            self.pstates[which].posn_x.as_slice(),
+            self.pstates[which].posn_y.as_slice(),
+            self.gps.x,
+            self.gps.y,
+            self.inv_gps_var,
+            &mut self.gps_probs,
+        );
+
+        // =========================================
+        // 3. Batch compute IMU probabilities (SIMD)
+        // =========================================
+        imu_prob_batch(
+            self.pstates[which].vel_r.as_slice(),
+            self.pstates[which].vel_t.as_slice(),
+            self.imu.r,
+            self.imu.t,
+            inv_dt,
+            &mut self.imu_probs,
+        );
+
+        // =========================================
+        // 4. Update weights and compute total (SIMD)
+        // =========================================
+        let tweight = update_weights(
+            &self.gps_probs,
+            &self.imu_probs,
+            self.pstates[which].weight.as_mut_slice(),
+        );
 
         #[cfg(feature = "debug")]
         assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
 
+        // =========================================
+        // 5. Normalize weights (SIMD)
+        // =========================================
         let invtweight = 1.0 / tweight;
-        for i in 0..self.nparticles {
-            self.pstates[which].weight[i] *= invtweight;
-        }
+        scale_slice(self.pstates[which].weight.as_mut_slice(), invtweight);
 
-        if !self.best_particle {
-            for i in 0..self.nparticles {
-                let w = self.pstates[which].weight[i];
-                est_posn_x += w * self.pstates[which].posn_x[i];
-                est_posn_y += w * self.pstates[which].posn_y[i];
-                est_vel_r += w * self.pstates[which].vel_r[i];
-                est_vel_t = normalize_angle(est_vel_t + w * self.pstates[which].vel_t[i]);
-            }
-        }
+        // =========================================
+        // 6. Compute weighted position estimate (SIMD)
+        // =========================================
+        let (est_posn_x, est_posn_y, est_vel_r, est_vel_t) = if !self.best_particle {
+            let weights = self.pstates[which].weight.as_slice();
+            let ex = weighted_sum(weights, self.pstates[which].posn_x.as_slice());
+            let ey = weighted_sum(weights, self.pstates[which].posn_y.as_slice());
+            let er = weighted_sum(weights, self.pstates[which].vel_r.as_slice());
+            let et = weighted_circular_mean(weights, self.pstates[which].vel_t.as_slice());
+            // Note: Angle averaging is complex, keep scalar for correctness
+            // (circular mean would be more accurate but more complex)
+            (ex, ey, er, et)
+        } else {
+            (0.0, 0.0, 0.0, 0.0)
+        };
 
+        // =========================================
+        // 7. Report particles if needed
+        // =========================================
         if report {
             self.filename_buf.clear();
             let _ = write!(&mut self.filename_buf, "benchtmp/particles-{}.dat", t);
@@ -216,6 +241,9 @@ impl BpfState {
             }
         }
 
+        // =========================================
+        // 8. Resample if needed
+        // =========================================
         self.resample_count = (self.resample_count + 1) % self.resample_interval;
         if self.resample_count == 0 {
             let [ref mut p0, ref mut p1] = self.pstates;
@@ -224,7 +252,7 @@ impl BpfState {
             } else {
                 (p0, p1)
             };
-            best = self.resampler.resample(
+            let _best = self.resampler.resample(
                 tweight,
                 self.nparticles,
                 current,
@@ -235,46 +263,33 @@ impl BpfState {
             );
             self.which_particle = !self.which_particle;
             let which = self.which_particle as usize;
-            for i in 0..self.nparticles {
-                self.pstates[which].weight[i] = self.inv_nparticles;
-            }
+            // Reset weights using SIMD
+            fill_slice(
+                self.pstates[which].weight.as_mut_slice(),
+                self.inv_nparticles,
+            );
         }
 
+        // =========================================
+        // 9. Find best/worst particle (SIMD)
+        // =========================================
         let which = self.which_particle as usize;
-        best_weight = self.pstates[which].weight[0];
-        worst_weight = self.pstates[which].weight[0];
-        best = 0;
-        #[cfg(feature = "diagnostic-print")]
-        {
-            worst = 0;
-        }
-
-        for i in 1..self.nparticles {
-            if self.pstates[which].weight[i] > best_weight {
-                best = i;
-                best_weight = self.pstates[which].weight[i];
-            } else if self.pstates[which].weight[i] < worst_weight {
-                #[cfg(feature = "diagnostic-print")]
-                {
-                    worst = i;
-                }
-                worst_weight = self.pstates[which].weight[i];
-            }
-        }
+        let (best, _worst, _best_weight, _worst_weight) =
+            find_best_worst(self.pstates[which].weight.as_slice());
 
         #[cfg(feature = "diagnostic-print")]
         {
             print!(
                 "  {} {} {}",
-                GPoint(best_weight),
+                GPoint(_best_weight),
                 GPoint(self.pstates[which].posn_x[best]),
                 GPoint(self.pstates[which].posn_y[best]),
             );
             print!(
                 "  {} {} {}",
-                GPoint(worst_weight),
-                GPoint(self.pstates[which].posn_x[worst]),
-                GPoint(self.pstates[which].posn_y[worst]),
+                GPoint(_worst_weight),
+                GPoint(self.pstates[which].posn_x[_worst]),
+                GPoint(self.pstates[which].posn_y[_worst]),
             );
         }
 

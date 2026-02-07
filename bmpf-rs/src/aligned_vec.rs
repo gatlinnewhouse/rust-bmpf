@@ -31,9 +31,6 @@ pub fn set_simd_alignment(align: usize) -> Result<(), &'static str> {
 fn detect_optimal_alignment() -> usize {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx512f") {
-            return 64; // AVX-512: 512 bits = 64 bytes
-        }
         if is_x86_feature_detected!("avx") {
             return 32; // AVX: 256 bits = 32 bytes
         }
