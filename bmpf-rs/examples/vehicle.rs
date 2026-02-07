@@ -1,4 +1,4 @@
-use bmpf_rs::types::State;
+use bmpf_rs::{sim::DEFAULT_GPS_VAR, types::State};
 use gpoint::GPoint;
 use ziggurat_rs::Ziggurat;
 
@@ -18,7 +18,7 @@ fn run() {
     while t <= 10.0f64 {
         let msec = (t * 1000f64 + 0.5f64).floor();
         s.vehicle.update_state(dt, 0, &mut s.rng);
-        let gps = s.vehicle.gps_measure(&mut s.rng);
+        let gps = s.vehicle.gps_measure(&mut s.rng, DEFAULT_GPS_VAR);
         let imu = s.vehicle.imu_measure(dt, &mut s.rng);
         println!(
             "{} {} {} {} {} {} {}",

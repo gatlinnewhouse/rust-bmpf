@@ -5,7 +5,7 @@ pub const MAX_SPEED: f64 = 2.0;
 
 pub const AVAR: f64 = PI / 32.0;
 pub const RVAR: f64 = 0.1;
-pub static mut GPS_VAR: f64 = 1.0;
+pub const DEFAULT_GPS_VAR: f64 = 1.0;
 pub const IMU_R_VAR: f64 = 0.5;
 pub const IMU_A_VAR: f64 = PI / 8.0;
 pub const NDIRNS: i32 = 1024;

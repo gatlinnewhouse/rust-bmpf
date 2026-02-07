@@ -77,6 +77,7 @@ fn main() {
         args.report_particles,
         args.best_particle,
         args.resample_interval,
+        args.gps_var,
     );
 
     state.init_particles();
