@@ -1,14 +1,11 @@
 use crate::{
-    consts::DEFAULT_GPS_VAR,
+    consts::{BOX_DIM, DEFAULT_GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NEG_BOX_DIM, TWO_PI},
     resample::{Resample, Resampler},
-    simd::{
-        fill_slice, find_best_worst, gps_prob_batch, imu_prob_batch, scale_slice, update_weights,
-        weighted_circular_mean, weighted_sum,
-    },
     types::{ACoord, CCoord, Particles},
     utils::normalize_angle,
 };
 use gpoint::GPoint;
+use multiversion::multiversion;
 use std::{fmt::Write, fs::OpenOptions, io::BufWriter};
 use ziggurat_rs::Ziggurat;
 
@@ -30,9 +27,6 @@ pub struct BpfState {
     pub(crate) inv_nparticles: f64,
     pub(crate) gps_var: f64,
     pub(crate) inv_gps_var: f64,
-    // Scratch buffers for SIMD operations (avoid repeated allocation)
-    gps_probs: Vec<f64>,
-    imu_probs: Vec<f64>,
 }
 
 impl Default for BpfState {
@@ -55,8 +49,6 @@ impl Default for BpfState {
             inv_nparticles: 1.0 / 100.0,
             gps_var: DEFAULT_GPS_VAR,
             inv_gps_var: 1.0 / DEFAULT_GPS_VAR,
-            gps_probs: vec![0.0; 100],
-            imu_probs: vec![0.0; 100],
         }
     }
 }
@@ -89,8 +81,6 @@ impl BpfState {
             inv_nparticles: 1.0 / nparticles as f64,
             gps_var,
             inv_gps_var: 1.0 / gps_var,
-            gps_probs: vec![0.0; nparticles],
-            imu_probs: vec![0.0; nparticles],
         }
     }
 
@@ -103,9 +93,8 @@ impl BpfState {
         self.which_particle = false;
         for i in 0..self.nparticles {
             self.pstates[0].init_particle_state(i, &mut self.rng);
+            self.pstates[0].weight[i] = self.inv_nparticles;
         }
-        // Use SIMD fill for weights
-        fill_slice(self.pstates[0].weight.as_mut_slice(), self.inv_nparticles);
     }
 
     pub fn parse_line(&mut self, line: String) -> i32 {
@@ -152,74 +141,55 @@ impl BpfState {
         let which = self.which_particle as usize;
         let inv_dt = 1.0 / dt;
 
-        // =========================================
-        // 1. Update particle states (still sequential due to RNG dependency)
-        // =========================================
+        // Update states (RNG-dependent, cannot vectorize)
         for i in 0..self.nparticles {
             self.pstates[which].update_particle_state(i, dt, 1, &mut self.rng);
         }
 
-        // =========================================
-        // 2. Batch compute GPS probabilities (SIMD)
-        // =========================================
-        gps_prob_batch(
+        // Fused probability computation and weight update
+        let tweight = compute_weights_fused(
             self.pstates[which].posn_x.as_slice(),
             self.pstates[which].posn_y.as_slice(),
+            self.pstates[which].vel_r.as_slice(),
+            self.pstates[which].vel_t.as_slice(),
+            self.pstates[which].weight.as_mut_slice(),
             self.gps.x,
             self.gps.y,
             self.inv_gps_var,
-            &mut self.gps_probs,
-        );
-
-        // =========================================
-        // 3. Batch compute IMU probabilities (SIMD)
-        // =========================================
-        imu_prob_batch(
-            self.pstates[which].vel_r.as_slice(),
-            self.pstates[which].vel_t.as_slice(),
             self.imu.r,
             self.imu.t,
             inv_dt,
-            &mut self.imu_probs,
-        );
-
-        // =========================================
-        // 4. Update weights and compute total (SIMD)
-        // =========================================
-        let tweight = update_weights(
-            &self.gps_probs,
-            &self.imu_probs,
-            self.pstates[which].weight.as_mut_slice(),
         );
 
         #[cfg(feature = "debug")]
         assert!(tweight > 0.00001, "{} < 0.00001", GPoint(tweight));
 
-        // =========================================
-        // 5. Normalize weights (SIMD)
-        // =========================================
+        // Normalize weights
         let invtweight = 1.0 / tweight;
-        scale_slice(self.pstates[which].weight.as_mut_slice(), invtweight);
+        normalize_weights(self.pstates[which].weight.as_mut_slice(), invtweight);
 
-        // =========================================
-        // 6. Compute weighted position estimate (SIMD)
-        // =========================================
-        let (est_posn_x, est_posn_y, est_vel_r, est_vel_t) = if !self.best_particle {
-            let weights = self.pstates[which].weight.as_slice();
-            let ex = weighted_sum(weights, self.pstates[which].posn_x.as_slice());
-            let ey = weighted_sum(weights, self.pstates[which].posn_y.as_slice());
-            let er = weighted_sum(weights, self.pstates[which].vel_r.as_slice());
-            let et = weighted_circular_mean(weights, self.pstates[which].vel_t.as_slice());
-            // Note: Angle averaging is complex, keep scalar for correctness
-            // (circular mean would be more accurate but more complex)
-            (ex, ey, er, et)
-        } else {
-            (0.0, 0.0, 0.0, 0.0)
-        };
+        // Compute weighted estimates
+        let mut est_posn_x = 0.0;
+        let mut est_posn_y = 0.0;
+        let mut est_vel_t = 0.0;
 
-        // =========================================
-        // 7. Report particles if needed
-        // =========================================
+        if !self.best_particle {
+            let (ex, ey) = weighted_position_sum(
+                self.pstates[which].weight.as_slice(),
+                self.pstates[which].posn_x.as_slice(),
+                self.pstates[which].posn_y.as_slice(),
+            );
+            est_posn_x = ex;
+            est_posn_y = ey;
+
+            // Angle averaging (scalar - circular quantity)
+            for i in 0..self.nparticles {
+                let w = self.pstates[which].weight[i];
+                est_vel_t = normalize_angle(est_vel_t + w * self.pstates[which].vel_t[i]);
+            }
+        }
+
+        // Report particles if needed
         if report {
             self.filename_buf.clear();
             let _ = write!(&mut self.filename_buf, "benchtmp/particles-{}.dat", t);
@@ -241,9 +211,7 @@ impl BpfState {
             }
         }
 
-        // =========================================
-        // 8. Resample if needed
-        // =========================================
+        // Resample if needed
         self.resample_count = (self.resample_count + 1) % self.resample_interval;
         if self.resample_count == 0 {
             let [ref mut p0, ref mut p1] = self.pstates;
@@ -263,22 +231,19 @@ impl BpfState {
             );
             self.which_particle = !self.which_particle;
             let which = self.which_particle as usize;
-            // Reset weights using SIMD
-            fill_slice(
-                self.pstates[which].weight.as_mut_slice(),
-                self.inv_nparticles,
-            );
+            for i in 0..self.nparticles {
+                self.pstates[which].weight[i] = self.inv_nparticles;
+            }
         }
 
-        // =========================================
-        // 9. Find best/worst particle (SIMD)
-        // =========================================
+        // Find best particle
         let which = self.which_particle as usize;
-        let (best, _worst, _best_weight, _worst_weight) =
-            find_best_worst(self.pstates[which].weight.as_slice());
+        let (best, _best_weight) = find_best(self.pstates[which].weight.as_slice());
 
         #[cfg(feature = "diagnostic-print")]
         {
+            let (_, worst, _, worst_weight) =
+                find_best_worst(self.pstates[which].weight.as_slice());
             print!(
                 "  {} {} {}",
                 GPoint(_best_weight),
@@ -287,9 +252,9 @@ impl BpfState {
             );
             print!(
                 "  {} {} {}",
-                GPoint(_worst_weight),
-                GPoint(self.pstates[which].posn_x[_worst]),
-                GPoint(self.pstates[which].posn_y[_worst]),
+                GPoint(worst_weight),
+                GPoint(self.pstates[which].posn_x[worst]),
+                GPoint(self.pstates[which].posn_y[worst]),
             );
         }
 
@@ -306,4 +271,125 @@ impl BpfState {
             print!("  {} {}", GPoint(est_posn_x), GPoint(est_posn_y));
         }
     }
+}
+
+// =============================================================================
+// SIMD-enabled helper functions (inlined into this module for cache locality)
+// =============================================================================
+
+/// Fused weight computation: gps_prob * imu_prob * weight, returns total
+#[multiversion(targets = "simd")]
+fn compute_weights_fused(
+    posn_x: &[f64],
+    posn_y: &[f64],
+    vel_r: &[f64],
+    vel_t: &[f64],
+    weights: &mut [f64],
+    gps_x: f64,
+    gps_y: f64,
+    inv_gps_var: f64,
+    imu_r: f64,
+    imu_t: f64,
+    inv_dt: f64,
+) -> f64 {
+    let n = weights.len();
+    debug_assert_eq!(posn_x.len(), n);
+    debug_assert_eq!(posn_y.len(), n);
+    debug_assert_eq!(vel_r.len(), n);
+    debug_assert_eq!(vel_t.len(), n);
+
+    let neg_half_gps = -0.5 * inv_gps_var * inv_gps_var;
+    let imu_r_var_scaled = IMU_R_VAR * inv_dt;
+    let imu_a_var_scaled = IMU_A_VAR * inv_dt;
+    let inv_r_var = 1.0 / imu_r_var_scaled;
+    let inv_a_var = 1.0 / imu_a_var_scaled;
+    let neg_half_r = -0.5 * inv_r_var * inv_r_var;
+    let neg_half_a = -0.5 * inv_a_var * inv_a_var;
+
+    let mut total = 0.0;
+
+    for i in 0..n {
+        let px = posn_x[i];
+        let py = posn_y[i];
+        let vr = vel_r[i];
+        let vt = vel_t[i];
+
+        // GPS probability
+        let gps_prob = if px < NEG_BOX_DIM || px > BOX_DIM || py < NEG_BOX_DIM || py > BOX_DIM {
+            0.0
+        } else {
+            let dx = px - gps_x;
+            let dy = py - gps_y;
+            libm::exp(neg_half_gps * (dx * dx + dy * dy))
+        };
+
+        // IMU probability
+        let imu_prob = if vr < 0.0 || vr > MAX_SPEED {
+            0.0
+        } else {
+            let dr = vr - imu_r;
+            let dth_raw = (vt - imu_t).abs();
+            let dth = dth_raw.min((dth_raw - TWO_PI).abs());
+            libm::exp(neg_half_r * dr * dr) * libm::exp(neg_half_a * dth * dth)
+        };
+
+        // Update weight
+        let w = gps_prob * imu_prob * weights[i];
+        weights[i] = w;
+        total += w;
+    }
+
+    total
+}
+
+/// Normalize weights in place
+#[multiversion(targets = "simd")]
+fn normalize_weights(weights: &mut [f64], scale: f64) {
+    for w in weights.iter_mut() {
+        *w *= scale;
+    }
+}
+
+/// Weighted sum of positions
+#[multiversion(targets = "simd")]
+fn weighted_position_sum(weights: &[f64], posn_x: &[f64], posn_y: &[f64]) -> (f64, f64) {
+    let mut sum_x = 0.0;
+    let mut sum_y = 0.0;
+    for ((&w, &x), &y) in weights.iter().zip(posn_x.iter()).zip(posn_y.iter()) {
+        sum_x += w * x;
+        sum_y += w * y;
+    }
+    (sum_x, sum_y)
+}
+
+/// Find best (max weight) particle
+#[multiversion(targets = "simd")]
+fn find_best(weights: &[f64]) -> (usize, f64) {
+    let mut best_idx = 0;
+    let mut best_w = weights[0];
+    for (i, &w) in weights.iter().enumerate().skip(1) {
+        if w > best_w {
+            best_w = w;
+            best_idx = i;
+        }
+    }
+    (best_idx, best_w)
+}
+
+#[cfg(feature = "diagnostic-print")]
+fn find_best_worst(weights: &[f64]) -> (usize, usize, f64, f64) {
+    let mut best_idx = 0;
+    let mut worst_idx = 0;
+    let mut best_w = weights[0];
+    let mut worst_w = weights[0];
+    for (i, &w) in weights.iter().enumerate().skip(1) {
+        if w > best_w {
+            best_w = w;
+            best_idx = i;
+        } else if w < worst_w {
+            worst_w = w;
+            worst_idx = i;
+        }
+    }
+    (best_idx, worst_idx, best_w, worst_w)
 }
