@@ -1,3 +1,14 @@
 [workspace]
 resolver = "3"
 members = ["bmpf-rs", "ziggurat-rs"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"              # Link-time optimization (full)
+codegen-units = 1        # Single codegen unit for better optimization
+panic = "abort"          # No unwinding overhead
+strip = true             # Strip symbols (smaller binary)
+debug = false
+
+[profile.release.build-override]
+opt-level = 3
