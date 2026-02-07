@@ -1,15 +1,14 @@
 use crate::{
-    gaussian,
     resample::{Resample, Resampler},
     sim::{
-        AVAR, BOX_DIM, COS_DIRN, CosDirn, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED,
-        NDIRNS, NEG_BOX_DIM, PI_OVER_TWO, RVAR, TWO_PI, angle_dirn, clip_box, clip_speed,
-        normalize_angle, normalize_dirn,
+        AVAR, BOX_DIM, COS_DIRN, FAST_DIRECTION, GPS_VAR, IMU_A_VAR, IMU_R_VAR, MAX_SPEED, NDIRNS,
+        NEG_BOX_DIM, PI_OVER_TWO, RVAR, TWO_PI, angle_dirn, clip_box, clip_speed, normalize_angle,
+        normalize_dirn,
     },
-    uniform,
 };
 use gpoint::GPoint;
 use std::{cmp::Ordering, f64::consts::PI, fmt::Write, fs::OpenOptions, io::BufWriter};
+use ziggurat_rs::Ziggurat;
 
 #[derive(Default, Clone, Copy)]
 pub struct CCoord {
@@ -24,15 +23,15 @@ fn gprob(delta: f64, sd: f64) -> f64 {
 }
 
 impl CCoord {
-    fn gps_measure(&self) -> CCoord {
+    fn gps_measure(&self, rng: &mut Ziggurat) -> CCoord {
         let mut result = *self;
-        result.x += gaussian(unsafe { GPS_VAR });
-        result.y += gaussian(unsafe { GPS_VAR });
+        result.x += rng.gaussian(unsafe { GPS_VAR });
+        result.y += rng.gaussian(unsafe { GPS_VAR });
         result
     }
 
     #[inline]
-    fn gps_prob(&self, state: &VehicleState) -> f64 {
+    fn gps_prob(&self, state: &State) -> f64 {
         if state.posn.x < NEG_BOX_DIM
             || state.posn.x > BOX_DIM
             || state.posn.y < NEG_BOX_DIM
@@ -53,10 +52,10 @@ pub struct ACoord {
 }
 
 impl ACoord {
-    fn measure(&self, dt: f64) -> ACoord {
+    fn measure(&self, dt: f64, rng: &mut Ziggurat) -> ACoord {
         let mut result = *self;
-        result.r += gaussian(IMU_R_VAR * dt);
-        result.t = normalize_angle(result.t + gaussian(IMU_A_VAR * dt));
+        result.r += rng.gaussian(IMU_R_VAR * dt);
+        result.t = normalize_angle(result.t + rng.gaussian(IMU_A_VAR * dt));
         if result.r < 0.0 {
             result.r = -result.r;
             result.t = normalize_angle(result.t + PI);
@@ -65,7 +64,7 @@ impl ACoord {
     }
 
     #[inline]
-    fn imu_prob(&self, state: &VehicleState, inv_dt: f64) -> f64 {
+    fn imu_prob(&self, state: &State, inv_dt: f64) -> f64 {
         if state.vel.r < 0.0 || state.vel.r > MAX_SPEED {
             return 0.0;
         }
@@ -88,20 +87,20 @@ enum BounceProblem {
 
 #[repr(C)]
 #[derive(Clone, Default, Copy)]
-pub struct VehicleState {
+pub struct State {
     pub posn: CCoord,
     vel: ACoord,
 }
 
-impl VehicleState {
+impl State {
     #[inline]
-    pub fn gps_measure(&self) -> CCoord {
-        self.posn.gps_measure()
+    pub fn gps_measure(&self, rng: &mut Ziggurat) -> CCoord {
+        self.posn.gps_measure(rng)
     }
 
     #[inline]
-    pub fn imu_measure(&self, dt: f64) -> ACoord {
-        self.vel.measure(dt)
+    pub fn imu_measure(&self, dt: f64, rng: &mut Ziggurat) -> ACoord {
+        self.vel.measure(dt, rng)
     }
 
     fn bounce(&mut self, r: f64, t: f64, dt: f64, _noise: i32) -> BounceProblem {
@@ -150,16 +149,16 @@ impl VehicleState {
         BounceProblem::BounceXY
     }
 
-    pub fn init_state(&mut self) {
-        self.posn.x = (uniform() * 2.0 - 1.0) * BOX_DIM;
-        self.posn.y = (uniform() * 2.0 - 1.0) * BOX_DIM;
-        self.vel.r = uniform();
-        self.vel.t = normalize_angle(uniform() * (PI_OVER_TWO));
+    pub fn init_state(&mut self, rng: &mut Ziggurat) {
+        self.posn.x = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.posn.y = (rng.uniform() * 2.0 - 1.0) * BOX_DIM;
+        self.vel.r = rng.uniform();
+        self.vel.t = normalize_angle(rng.uniform() * (PI_OVER_TWO));
     }
 
-    pub fn update_state(&mut self, dt: f64, noise: i32) {
-        let mut r0 = clip_speed(self.vel.r + gaussian(RVAR) * ((1 + 8 * noise) as f64));
-        let mut t0 = normalize_angle(self.vel.t + gaussian(AVAR) * ((1 + 8 * noise) as f64));
+    pub fn update_state(&mut self, dt: f64, noise: i32, rng: &mut Ziggurat) {
+        let mut r0 = clip_speed(self.vel.r + rng.gaussian(RVAR) * ((1 + 8 * noise) as f64));
+        let mut t0 = normalize_angle(self.vel.t + rng.gaussian(AVAR) * ((1 + 8 * noise) as f64));
         let mut b = self.bounce(r0, t0, dt, noise);
         if b != BounceProblem::BounceOk {
             r0 = self.vel.r;
@@ -187,7 +186,7 @@ impl VehicleState {
 
 #[derive(Default, Clone, Copy)]
 pub struct ParticleInfo {
-    pub state: VehicleState,
+    pub state: State,
     pub weight: f64,
 }
 
@@ -242,6 +241,7 @@ pub struct BpfState {
     gps: CCoord,
     imu: ACoord,
     filename_buf: String,
+    rng: Ziggurat,
 }
 
 impl Default for BpfState {
@@ -260,6 +260,7 @@ impl Default for BpfState {
             gps: CCoord::default(),
             imu: ACoord::default(),
             filename_buf: String::with_capacity(64),
+            rng: Ziggurat::default(),
         }
     }
 }
@@ -287,14 +288,20 @@ impl BpfState {
             gps: CCoord::default(),
             imu: ACoord::default(),
             filename_buf: String::with_capacity(64),
+            rng: Ziggurat::default(),
         }
+    }
+
+    pub fn with_seed(mut self, seed: u32) -> Self {
+        self.rng = Ziggurat::new(seed);
+        self
     }
 
     pub fn init_particles(&mut self) {
         let invscale = 1.0 / self.nparticles as f64;
         self.which_particle = false;
         for particle in &mut self.pstates[0].data {
-            particle.state.init_state();
+            particle.state.init_state(&mut self.rng);
             particle.weight = invscale;
         }
     }
@@ -347,7 +354,7 @@ impl BpfState {
         let mut worst = 0usize;
         let mut best_weight;
         let mut worst_weight;
-        let mut est_state = VehicleState::default();
+        let mut est_state = State::default();
         // est_state.init_state();
         #[cfg(feature = "debug")]
         {
@@ -363,7 +370,7 @@ impl BpfState {
             .iter_mut()
             .enumerate()
         {
-            particle.state.update_state(dt, 1);
+            particle.state.update_state(dt, 1, &mut self.rng);
             let inv_dt = 1.0 / dt;
             let gp = self.gps.gps_prob(&particle.state);
             let ip = self.imu.imu_prob(&particle.state, inv_dt);
@@ -444,6 +451,7 @@ impl BpfState {
                 self.nparticles,
                 new,
                 self.sort,
+                &mut self.rng,
             );
             self.which_particle = !self.which_particle;
             let inv_n = 1.0 / self.nparticles as f64;

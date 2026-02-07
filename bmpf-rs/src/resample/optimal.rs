@@ -1,14 +1,15 @@
-use crate::{polynomial, resample::Resample, uniform};
+use crate::resample::Resample;
+use ziggurat_rs::Ziggurat;
 
 #[derive(Default)]
 pub struct Optimal {}
 
 #[inline]
-fn nform(n: i32, sort: bool) -> f64 {
+fn nform(n: i32, sort: bool, rng: &mut Ziggurat) -> f64 {
     if sort {
-        return polynomial(n);
+        return rng.polynomial(n);
     }
-    1.0f64 - uniform().powf(1.0 / (n + 1) as f64)
+    1.0f64 - rng.uniform().powf(1.0 / (n + 1) as f64)
 }
 
 impl Resample for Optimal {
@@ -20,9 +21,10 @@ impl Resample for Optimal {
         n: usize,
         new_particle: &mut crate::types::Particles,
         sort: bool,
+        rng: &mut Ziggurat,
     ) -> usize {
         let invscale = 1.0 / scale;
-        let mut u0 = nform((n - 1) as i32, sort) * scale;
+        let mut u0 = nform((n - 1) as i32, sort, rng) * scale;
         let mut j = 0;
         let mut t = 0f64;
         let mut best_w = 0f64;
@@ -46,7 +48,7 @@ impl Resample for Optimal {
                 best_w = new_particle.data[i].weight;
                 best_i = i;
             }
-            u0 = u0 + (scale - u0) * nform((n - i - 1) as i32, sort);
+            u0 = u0 + (scale - u0) * nform((n - i - 1) as i32, sort, rng);
         }
         best_i
     }

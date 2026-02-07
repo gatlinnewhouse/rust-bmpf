@@ -1,4 +1,5 @@
 use crate::types::Particles;
+use ziggurat_rs::Ziggurat;
 
 /// Naive resampler
 mod logm;
@@ -18,6 +19,7 @@ pub trait Resample {
         n: usize,
         new_particle: &mut Particles,
         sort: bool,
+        rng: &mut Ziggurat,
     ) -> usize;
 }
 
@@ -49,15 +51,18 @@ impl Resample for Resampler {
         n: usize,
         new_particle: &mut Particles,
         sort: bool,
+        rng: &mut Ziggurat,
     ) -> usize {
         match self {
-            Resampler::Logm(logm) => logm.resample(scale, m, particle, n, new_particle, sort),
-            Resampler::Naive(naive) => naive.resample(scale, m, particle, n, new_particle, sort),
+            Resampler::Logm(logm) => logm.resample(scale, m, particle, n, new_particle, sort, rng),
+            Resampler::Naive(naive) => {
+                naive.resample(scale, m, particle, n, new_particle, sort, rng)
+            }
             Resampler::Optimal(optimal) => {
-                optimal.resample(scale, m, particle, n, new_particle, sort)
+                optimal.resample(scale, m, particle, n, new_particle, sort, rng)
             }
             Resampler::Regular(regular) => {
-                regular.resample(scale, m, particle, n, new_particle, sort)
+                regular.resample(scale, m, particle, n, new_particle, sort, rng)
             }
         }
     }

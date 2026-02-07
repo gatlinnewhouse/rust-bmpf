@@ -1,9 +1,9 @@
 use crate::{
     resample::Resample,
     types::{ParticleInfo, Particles},
-    uniform,
 };
 use std::process::abort;
+use ziggurat_rs::Ziggurat;
 
 #[cfg(feature = "debug-heapify")]
 static DW: f64 = 1.0e9;
@@ -28,8 +28,9 @@ impl<'a> Logm {
         scale: f64,
         m: usize,
         particles: &'a Particles,
+        rng: &'a mut Ziggurat,
     ) -> &'a ParticleInfo {
-        let mut w = uniform() * scale;
+        let mut w = rng.uniform() * scale;
         #[cfg(feature = "debug-logm")]
         let mut j = 0usize;
         for mut i in 0..m {
@@ -161,6 +162,7 @@ impl Resample for Logm {
         n: usize,
         new_particle: &mut Particles,
         sort: bool,
+        rng: &mut Ziggurat,
     ) -> usize {
         let mut best_w = 0f64;
         let mut best_i = 0usize;
@@ -183,7 +185,7 @@ impl Resample for Logm {
         }
         let invscale = 1.0 / self.tweight[0];
         for i in 0..n {
-            new_particle.data[i] = *self.weighted_sample(self.tweight[0], m, particle);
+            new_particle.data[i] = *self.weighted_sample(self.tweight[0], m, particle, rng);
             new_particle.data[i].weight *= invscale;
             if new_particle.data[i].weight > best_w {
                 best_w = new_particle.data[i].weight;

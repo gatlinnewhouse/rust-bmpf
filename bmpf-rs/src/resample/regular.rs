@@ -1,4 +1,5 @@
-use crate::{rand32, resample::Resample, types::Particles};
+use crate::{resample::Resample, types::Particles};
+use ziggurat_rs::Ziggurat;
 
 #[derive(Default)]
 pub struct Regular {}
@@ -12,6 +13,7 @@ impl Resample for Regular {
         n: usize,
         new_particle: &mut Particles,
         sort: bool,
+        rng: &mut Ziggurat,
     ) -> usize {
         let invscale = 1.0 / scale;
         let mut best_w = 0f64;
@@ -20,7 +22,7 @@ impl Resample for Regular {
         // Shuffle
         if sort {
             for i in 0..m - 1 {
-                let j = rand32() as usize % (m - i) + i;
+                let j = rng.rand32() as usize % (m - i) + i;
                 particle.data.swap(j, i);
             }
         }
